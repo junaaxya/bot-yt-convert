@@ -17,22 +17,20 @@ export function createMessageHandler(sock, logger = console) {
         return sock.sendMessage(jid, { text: content }, opts);
     }
 
-    async function sendDoc(jid, path, fileName, mimetype, quoted) {
+    // Fungsi untuk mengirim audio (menggantikan sendDoc)
+    async function sendAudio(jid, path, fileName, mimetype, opts = {}) {
         return sock.sendMessage(
             jid,
-            { document: { url: path }, fileName, mimetype },
-            { quoted }
+            { audio: { url: path }, fileName, mimetype },
+            opts
         );
     }
 
-    async function sendVideo(jid, path, caption, quoted) {
-        return sock.sendMessage(
-            jid,
-            { video: { url: path }, caption },
-            { quoted }
-        );
+    async function sendVideo(jid, path, caption, opts = {}) {
+        return sock.sendMessage(jid, { video: { url: path }, caption }, opts);
     }
 
+    // Fungsi unwrap (pembuka) pesan
     function unwrap(msg) {
         let m = msg;
         if (m?.ephemeralMessage) m = m.ephemeralMessage.message;
@@ -112,28 +110,37 @@ export function createMessageHandler(sock, logger = console) {
         );
     }
 
-    async function handleYouTube(type, url, jid, m) {
+    // --- PERBAIKAN ALTERNATIF DIMULAI DI SINI ---
+
+    // 1. Fungsi 'handleYouTube' sekarang menerima 'safeQuote'
+    async function handleYouTube(type, url, jid, safeQuote) {
         return queue.add(async () => {
             await reply(
                 jid,
                 `⏳ Tunggu yaa ${type.toUpperCase()} nya… masih di download`,
-                { quoted: m }
+                { quoted: safeQuote } // 2. Menggunakan 'safeQuote'
             );
             try {
                 if (type === 'mp3') {
                     const { path, fileName } = await downloadYouTubeMP3(url);
                     await ensureWithinLimit(path);
-                    await sendDoc(jid, path, fileName, 'audio/mpeg', m);
+                    await sendAudio(jid, path, fileName, 'audio/mp4', {
+                        quoted: safeQuote, // 3. Menggunakan 'safeQuote'
+                    });
                     await safeUnlink(path);
                 } else {
                     const { path, fileName } = await downloadYouTubeMP4(url);
                     await ensureWithinLimit(path);
-                    await sendVideo(jid, path, fileName, m);
+                    await sendVideo(jid, path, fileName, {
+                        quoted: safeQuote, // 4. Menggunakan 'safeQuote'
+                    });
                     await safeUnlink(path);
                 }
             } catch (e) {
                 logger.error(e);
-                await reply(jid, `❌ Failed: ${e.message || e}`, { quoted: m });
+                await reply(jid, `❌ Failed: ${e.message || e}`, {
+                    quoted: safeQuote, // 5. Menggunakan 'safeQuote'
+                });
             }
         });
     }
@@ -146,6 +153,22 @@ export function createMessageHandler(sock, logger = console) {
         if (!text.startsWith('.')) return; // only handle dot-prefixed commands
 
         const { cmd, arg } = parseCommand(text);
+
+        // 6. ---- INI ADALAH SOLUSI BARU ----
+        // Kita buat salinan dari 'm' dan 'membuka' pesan kompleks.
+        // Ini (semoga) akan disukai oleh Baileys DAN iPhone.
+        const safeQuote = { ...m };
+        if (safeQuote.message?.ephemeralMessage) {
+            safeQuote.message = safeQuote.message.ephemeralMessage.message;
+        }
+        if (safeQuote.message?.viewOnceMessageV2) {
+            safeQuote.message = safeQuote.message.viewOnceMessageV2.message;
+        }
+        if (safeQuote.message?.viewOnceMessage) {
+            safeQuote.message = safeQuote.message.viewOnceMessage.message;
+        }
+        // ---- AKHIR SOLUSI BARU ----
+
         try {
             if (cmd === '.help' || cmd === '.menu') {
                 await reply(
@@ -161,7 +184,7 @@ Commands:
 Limits: duration ≤ ${CONFIG.MAX_DURATION_SEC / 60} min, size ≤ ${
                         CONFIG.MAX_FILE_MB
                     } MB.`,
-                    { quoted: m }
+                    { quoted: safeQuote } // 7. Menggunakan 'safeQuote'
                 );
                 return;
             }
@@ -169,19 +192,18 @@ Limits: duration ≤ ${CONFIG.MAX_DURATION_SEC / 60} min, size ≤ ${
             if (cmd === '.ytmp3') {
                 if (!arg)
                     return reply(jid, 'Send: *.ytmp3 <YouTube URL>*', {
-                        quoted: m,
+                        quoted: safeQuote, // 8. Menggunakan 'safeQuote'
                     });
-                return handleYouTube('mp3', arg, jid, m);
+                return handleYouTube('mp3', arg, jid, safeQuote); // 9. Menggunakan 'safeQuote'
             }
 
             if (cmd === '.ytmp4') {
                 if (!arg)
                     return reply(jid, 'Send: *.ytmp4 <YouTube URL>*', {
-                        quoted: m,
+                        quoted: safeQuote, // 10. Menggunakan 'safeQuote'
                     });
-                return handleYouTube('mp4', arg, jid, m);
+                return handleYouTube('mp4', arg, jid, safeQuote); // 11. Menggunakan 'safeQuote'
             }
-
             if (cmd === '.to_mp3') {
                 return queue.add(async () => {
                     const { out, isVideo } = await downloadQuotedOrOwnMedia(m);
@@ -189,12 +211,18 @@ Limits: duration ≤ ${CONFIG.MAX_DURATION_SEC / 60} min, size ≤ ${
                         throw new Error(
                             'Pesan bukan video. Balas sebuah *video* dengan .to_mp3'
                         );
-                    await reply(jid, '⏳ Converting to MP3…', { quoted: m });
-                    const mp3 = await mp4ToMp3(out);
-                    await ensureWithinLimit(mp3);
-                    await sendDoc(jid, mp3, 'output.mp3', 'audio/mpeg', m);
+                    await reply(
+                        jid,
+                        '⏳ Converting to Audio (M4A)…',
+                        { quoted: safeQuote } // 12. Menggunakan 'safeQuote'
+                    );
+                    const m4a = await mp4ToMp3(out);
+                    await ensureWithinLimit(m4a);
+                    await sendAudio(jid, m4a, 'output.m4a', 'audio/mp4', {
+                        quoted: safeQuote, // 13. Menggunakan 'safeQuote'
+                    });
                     await safeUnlink(out);
-                    await safeUnlink(mp3);
+                    await safeUnlink(m4a);
                 });
             }
 
@@ -205,17 +233,23 @@ Limits: duration ≤ ${CONFIG.MAX_DURATION_SEC / 60} min, size ≤ ${
                         throw new Error(
                             'Pesan bukan audio. Balas sebuah *audio* dengan .to_mp4'
                         );
-                    await reply(jid, '⏳ Converting to MP4…', { quoted: m });
+                    await reply(jid, '⏳ Converting to MP4…', {
+                        quoted: safeQuote, // 14. Menggunakan 'safeQuote'
+                    });
                     const mp4 = await mp3ToMp4(out);
                     await ensureWithinLimit(mp4);
-                    await sendVideo(jid, mp4, 'output.mp4', m);
+                    await sendVideo(jid, mp4, 'output.mp4', {
+                        quoted: safeQuote, // 15. Menggunakan 'safeQuote'
+                    });
                     await safeUnlink(out);
                     await safeUnlink(mp4);
                 });
             }
         } catch (e) {
             console.error(e);
-            await reply(jid, `❌ Error: ${e.message || e}`, { quoted: m });
+            await reply(jid, `❌ Error: ${e.message || e}`, {
+                quoted: safeQuote, // 16. Menggunakan 'safeQuote'
+            });
         }
     }
 

@@ -47,16 +47,14 @@ function safeName(title, ext) {
 
 // <-- TAMBAHAN: Fungsi fallback yt-dlp untuk MP3
 async function ytDlpAudioMP3(url) {
-    const out = tempPath('mp3');
+    const out = tempPath('m4a');
     await ytDlp.execPromise([
         cleanUrl(url),
         '--ffmpeg-location',
         ffmpegBin,
-        '-x', // extract audio
+        '-x',
         '--audio-format',
-        'mp3',
-        '--audio-quality',
-        '192K',
+        'm4a',
         '-f',
         'bestaudio',
         '--max-filesize',
@@ -86,7 +84,7 @@ async function ytDlpVideoMP4(url) {
         '--ffmpeg-location',
         ffmpegBin,
         '-f',
-        `bestvideo[height<=?720][ext=mp4]+bestaudio[ext=m4a]/best[height<=?720][ext=mp4]`,
+        `bestvideo[height<=?720][ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]/best[height<=?720][ext=mp4][vcodec^=avc]`, // <-- DIGANTI
         '--merge-output-format',
         'mp4',
         '--max-filesize',
@@ -119,8 +117,8 @@ export async function getBasicInfo(url) {
 export async function downloadYouTubeMP3(url) {
     // Force yt-dlp on server if requested
     if (FORCE_YTDLP) {
-        const out = await ytDlpAudioMP3(url); // Sekarang sudah didefinisikan
-        return { path: out, fileName: safeName('audio', 'mp3') }; // Sekarang sudah didefinisikan
+        const out = await ytDlpAudioMP3(url);
+        return { path: out, fileName: safeName('audio', 'm4a') };
     }
     try {
         const { info, lengthSec } = await getBasicInfo(url); // <-- PERBAIKAN (dari getInfoDistube)
