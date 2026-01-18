@@ -60,3 +60,29 @@ export async function applyPitchShift(inputPath, semitones) {
         fileName: `pitch_${semitones > 0 ? '+' : ''}${semitones}.mp3`,
     };
 }
+
+/**
+ * Apply karaoke effect (vocal removal) using phase cancellation
+ * @param {string} inputPath
+ * @returns {Promise<{path: string, fileName: string}>}
+ */
+export async function applyKaraoke(inputPath) {
+    const out = tempPath('mp3');
+    await new Promise((resolve, reject) => {
+        ffmpeg(inputPath)
+            // stereotools phase cancellation method
+            .audioFilters('stereotools=mlev=0.015625')
+            .format('mp3')
+            .on('error', reject)
+            .on('end', resolve)
+            .save(out);
+    });
+
+    try {
+        await fsp.stat(out);
+    } catch (e) {
+        throw new Error('FFmpeg failed to create karaoke file.');
+    }
+
+    return { path: out, fileName: 'karaoke_vocal_removed.mp3' };
+}
