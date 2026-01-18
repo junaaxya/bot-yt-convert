@@ -8,7 +8,7 @@ import {
     ensureWithinLimit,
 } from '../services/converter.js';
 import { downloadYouTubeMP3, downloadYouTubeMP4 } from '../services/youtube.js';
-import { downloadYouTubeMP3, downloadYouTubeMP4 } from '../services/youtube.js';
+
 import { applyPitchShift, applyKaraoke } from '../services/audioEffects.js';
 import { CONFIG } from '../config.js';
 
