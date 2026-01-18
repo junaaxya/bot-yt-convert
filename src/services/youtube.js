@@ -55,7 +55,7 @@ async function ytDlpAudioMP3(url) {
     await ytDlp.execPromise([
         cleanUrl(url),
         '--ffmpeg-location',
-        ffmpegBin,
+        'ffmpeg',
         '-x',
         '--audio-format',
         'm4a',
@@ -73,7 +73,7 @@ async function ytDlpAudioMP3(url) {
     } catch (e) {
         // Jika file tidak ada, lempar error yang lebih jelas
         throw new Error(
-            'Gagal unduh: yt-dlp tidak membuat file. Video mungkin terkunci regional, privat, atau terfilter (durasi/ukuran).'
+            'Gagal unduh: yt-dlp tidak membuat file. Video mungkin terkunci regional, privat, atau terfilter (durasi/ukuran).',
         );
     }
 
@@ -86,7 +86,7 @@ async function ytDlpVideoMP4(url) {
     await ytDlp.execPromise([
         cleanUrl(url),
         '--ffmpeg-location',
-        ffmpegBin,
+        'ffmpeg',
         '-f',
         `bestvideo[height<=?720][ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]/best[height<=?720][ext=mp4][vcodec^=avc]`, // <-- DIGANTI
         '--merge-output-format',
@@ -103,7 +103,7 @@ async function ytDlpVideoMP4(url) {
     } catch (e) {
         // Jika file tidak ada, lempar error yang lebih jelas
         throw new Error(
-            'Gagal unduh: yt-dlp tidak membuat file. Video mungkin terkunci regional, privat, atau terfilter (durasi/ukuran).'
+            'Gagal unduh: yt-dlp tidak membuat file. Video mungkin terkunci regional, privat, atau terfilter (durasi/ukuran).',
         );
     }
     return out;
@@ -130,7 +130,7 @@ export async function downloadYouTubeMP3(url) {
             throw new Error(
                 `Video too long: ${(lengthSec / 60).toFixed(1)} min > ${(
                     CONFIG.MAX_DURATION_SEC / 60
-                ).toFixed(1)} min`
+                ).toFixed(1)} min`,
             );
         const audio = ytdl.downloadFromInfo(info, {
             ...reqOpts(),
@@ -155,7 +155,7 @@ export async function downloadYouTubeMP3(url) {
         // broader match for any bot/captcha/signature issues
         if (
             /(confirm (you('|’|’)re|you are) not a bot|extract functions|captcha|signature)/i.test(
-                String(e?.message)
+                String(e?.message),
             )
         ) {
             const out = await ytDlpAudioMP3(url); // Sekarang sudah didefinisikan
@@ -176,7 +176,7 @@ export async function downloadYouTubeMP4(url) {
             throw new Error(
                 `Video too long: ${(lengthSec / 60).toFixed(1)} min > ${(
                     CONFIG.MAX_DURATION_SEC / 60
-                ).toFixed(1)} min`
+                ).toFixed(1)} min`,
             );
 
         // progressive first
@@ -186,7 +186,7 @@ export async function downloadYouTubeMP4(url) {
                 f.isHLS === false &&
                 f.container === 'mp4' &&
                 f.hasAudio &&
-                f.hasVideo
+                f.hasVideo,
         );
         if (format && format.url) {
             const vs = ytdl.downloadFromInfo(info, { ...reqOpts(), format });
@@ -223,7 +223,7 @@ export async function downloadYouTubeMP4(url) {
     } catch (e) {
         if (
             /(confirm (you('|’|’)re|you are) not a bot|extract functions|captcha|signature)/i.test(
-                String(e?.message)
+                String(e?.message),
             )
         ) {
             const out = await ytDlpVideoMP4(url); // Sekarang sudah didefinisikan
