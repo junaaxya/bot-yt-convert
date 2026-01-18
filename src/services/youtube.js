@@ -54,8 +54,8 @@ async function ytDlpAudioMP3(url) {
     const out = tempPath('m4a');
     await ytDlp.execPromise([
         cleanUrl(url),
-        '--ffmpeg-location',
-        'ffmpeg',
+        '--ffmpeg-location', '/usr/bin/ffmpeg',
+        '--js-runtime', 'node',
         '-x',
         '--audio-format',
         'm4a',
@@ -85,8 +85,8 @@ async function ytDlpVideoMP4(url) {
     const out = tempPath('mp4');
     await ytDlp.execPromise([
         cleanUrl(url),
-        '--ffmpeg-location',
-        'ffmpeg',
+        '--ffmpeg-location', '/usr/bin/ffmpeg',
+        '--js-runtime', 'node',
         '-f',
         `bestvideo[height<=?720][ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]/best[height<=?720][ext=mp4][vcodec^=avc]`, // <-- DIGANTI
         '--merge-output-format',
