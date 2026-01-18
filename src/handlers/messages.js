@@ -8,10 +8,20 @@ import {
     ensureWithinLimit,
 } from '../services/converter.js';
 import { downloadYouTubeMP3, downloadYouTubeMP4 } from '../services/youtube.js';
+import { applyPitchShift } from '../services/audioEffects.js';
 import { CONFIG } from '../config.js';
 
 export function createMessageHandler(sock, logger = console) {
     const queue = new PQueue({ concurrency: CONFIG.MAX_CONCURRENCY });
+
+    // Helper: Clean up temp file safely
+    const cleanup = async (path) => {
+        try {
+            if (path) await safeUnlink(path);
+        } catch (e) {
+            logger.error(`Cleanup failed for ${path}:`, e);
+        }
+    };
 
     async function reply(jid, content, opts = {}) {
         return sock.sendMessage(jid, { text: content }, opts);
@@ -22,7 +32,7 @@ export function createMessageHandler(sock, logger = console) {
         return sock.sendMessage(
             jid,
             { audio: { url: path }, fileName, mimetype },
-            opts
+            opts,
         );
     }
 
@@ -94,8 +104,8 @@ export function createMessageHandler(sock, logger = console) {
                 own.kind === 'video'
                     ? 'mp4'
                     : own.kind === 'audio'
-                    ? 'mp3'
-                    : 'bin';
+                      ? 'mp3'
+                      : 'bin';
             const out = tempPath(ext);
             await writeStreamToFile(stream, out);
             return {
@@ -106,7 +116,7 @@ export function createMessageHandler(sock, logger = console) {
         }
 
         throw new Error(
-            'Tidak menemukan media. Balas *video/audio* dengan perintah, atau kirim media + caption perintah.'
+            'Tidak menemukan media. Balas *video/audio* dengan perintah, atau kirim media + caption perintah.',
         );
     }
 
@@ -118,7 +128,7 @@ export function createMessageHandler(sock, logger = console) {
             await reply(
                 jid,
                 `⏳ Tunggu yaa ${type.toUpperCase()} nya… masih di download`,
-                { quoted: safeQuote } // 2. Menggunakan 'safeQuote'
+                { quoted: safeQuote }, // 2. Menggunakan 'safeQuote'
             );
             try {
                 if (type === 'mp3') {
@@ -184,7 +194,7 @@ Commands:
 Limits: duration ≤ ${CONFIG.MAX_DURATION_SEC / 60} min, size ≤ ${
                         CONFIG.MAX_FILE_MB
                     } MB.`,
-                    { quoted: safeQuote } // 7. Menggunakan 'safeQuote'
+                    { quoted: safeQuote }, // 7. Menggunakan 'safeQuote'
                 );
                 return;
             }
@@ -209,12 +219,12 @@ Limits: duration ≤ ${CONFIG.MAX_DURATION_SEC / 60} min, size ≤ ${
                     const { out, isVideo } = await downloadQuotedOrOwnMedia(m);
                     if (!isVideo)
                         throw new Error(
-                            'Pesan bukan video. Balas sebuah *video* dengan .to_mp3'
+                            'Pesan bukan video. Balas sebuah *video* dengan .to_mp3',
                         );
                     await reply(
                         jid,
                         '⏳ Converting to Audio (M4A)…',
-                        { quoted: safeQuote } // 12. Menggunakan 'safeQuote'
+                        { quoted: safeQuote }, // 12. Menggunakan 'safeQuote'
                     );
                     const m4a = await mp4ToMp3(out);
                     await ensureWithinLimit(m4a);
@@ -231,7 +241,7 @@ Limits: duration ≤ ${CONFIG.MAX_DURATION_SEC / 60} min, size ≤ ${
                     const { out, isAudio } = await downloadQuotedOrOwnMedia(m);
                     if (!isAudio)
                         throw new Error(
-                            'Pesan bukan audio. Balas sebuah *audio* dengan .to_mp4'
+                            'Pesan bukan audio. Balas sebuah *audio* dengan .to_mp4',
                         );
                     await reply(jid, '⏳ Converting to MP4…', {
                         quoted: safeQuote, // 14. Menggunakan 'safeQuote'
@@ -243,6 +253,87 @@ Limits: duration ≤ ${CONFIG.MAX_DURATION_SEC / 60} min, size ≤ ${
                     });
                     await safeUnlink(out);
                     await safeUnlink(mp4);
+                });
+            }
+
+            if (cmd === '.pitch') {
+                return queue.add(async () => {
+                    if (!arg) {
+                        return reply(
+                            jid,
+                            'Kirim/Balas audio dengan: *.pitch <angka>*\nContoh: *.pitch -1* atau *.pitch 1,5*',
+                            {
+                                quoted: safeQuote,
+                            },
+                        );
+                    }
+
+                    // 1. Parse number (handle comma as dot for Indo users)
+                    const valStr = arg.replace(',', '.');
+                    const semitones = parseFloat(valStr);
+
+                    if (isNaN(semitones)) {
+                        return reply(
+                            jid,
+                            '❌ Angka tidak valid. Contoh: .pitch 0,5',
+                            { quoted: safeQuote },
+                        );
+                    }
+
+                    // 2. Validate range (safety)
+                    if (semitones < -12 || semitones > 12) {
+                        return reply(
+                            jid,
+                            '❌ Batas: -12 sampai +12 semitones.',
+                            { quoted: safeQuote },
+                        );
+                    }
+
+                    // 3. Get media
+                    let out;
+                    try {
+                        const res = await downloadQuotedOrOwnMedia(m);
+                        if (!res.isAudio && !res.isVideo) {
+                            await cleanup(res.out);
+                            throw new Error('Harap balas ke AUDIO atau VIDEO.');
+                        }
+                        out = res.out;
+                    } catch (e) {
+                        return reply(jid, `❌ ${e.message}`, {
+                            quoted: safeQuote,
+                        });
+                    }
+
+                    await reply(
+                        jid,
+                        `⏳ Mengubah nada sebesar ${semitones} semitones...`,
+                        { quoted: safeQuote },
+                    );
+
+                    try {
+                        // 4. Process
+                        const { path: resultPath, fileName } =
+                            await applyPitchShift(out, semitones);
+                        await ensureWithinLimit(resultPath);
+
+                        // 5. Send back
+                        await sendAudio(
+                            jid,
+                            resultPath,
+                            fileName,
+                            'audio/mp4',
+                            { quoted: safeQuote },
+                        );
+
+                        await cleanup(resultPath);
+                    } catch (e) {
+                        console.error('Pitch Error:', e);
+                        await reply(jid, `❌ Gagal: ${e.message}`, {
+                            quoted: safeQuote,
+                        });
+                    } finally {
+                        await cleanup(out);
+                    }
                 });
             }
         } catch (e) {
