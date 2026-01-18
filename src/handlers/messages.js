@@ -8,8 +8,7 @@ import {
     ensureWithinLimit,
 } from '../services/converter.js';
 import { downloadYouTubeMP3, downloadYouTubeMP4 } from '../services/youtube.js';
-
-import { applyPitchShift, applyKaraoke } from '../services/audioEffects.js';
+import { applyPitchShift } from '../services/audioEffects.js';
 import { CONFIG } from '../config.js';
 
 export function createMessageHandler(sock, logger = console) {
@@ -128,7 +127,7 @@ export function createMessageHandler(sock, logger = console) {
         return queue.add(async () => {
             await reply(
                 jid,
-                `⏳ Tunggu yaa bitaa ${type.toUpperCase()} nya… masih di download`,
+                `⏳ Tunggu yaa ${type.toUpperCase()} nya… masih di download`,
                 { quoted: safeQuote }, // 2. Menggunakan 'safeQuote'
             );
             try {
@@ -186,16 +185,13 @@ export function createMessageHandler(sock, logger = console) {
                     jid,
                     `🤖 *WhatsApp Converter Bot*
 
-Daftar Perintah:
-• *.ytmp3 <url>* – Download YouTube jadi MP3 (Lagu)
-• *.ytmp4 <url>* – Download YouTube jadi MP4 (Video)
-• *.pitch <angka>* – Ubah nada audio (Reply audio/video)
-  Contoh: *.pitch -2* (Suara Berat), *.pitch 2* (Chipmunk)
-• *.karaoke* / *.vokaloff* – Hilangkan vokal (Mode Karaoke)
-• *.to_mp3* – Jadikan MP3 (Reply video)
-• *.to_mp4* – Jadikan MP4 (Reply audio/sticker)
+Commands:
+• *.ytmp3 <url>* – Download YouTube as MP3
+• *.ytmp4 <url>* – Download YouTube as MP4
+• Reply a video with *.to_mp3* OR send video with caption *.to_mp3*
+• Reply an audio with *.to_mp4* OR send audio with caption *.to_mp4*
 
-Batas: Durasi ≤ ${CONFIG.MAX_DURATION_SEC / 60} menit, Ukuran ≤ ${
+Limits: duration ≤ ${CONFIG.MAX_DURATION_SEC / 60} min, size ≤ ${
                         CONFIG.MAX_FILE_MB
                     } MB.`,
                     { quoted: safeQuote }, // 7. Menggunakan 'safeQuote'
@@ -332,52 +328,6 @@ Batas: Durasi ≤ ${CONFIG.MAX_DURATION_SEC / 60} menit, Ukuran ≤ ${
                         await cleanup(resultPath);
                     } catch (e) {
                         console.error('Pitch Error:', e);
-                        await reply(jid, `❌ Gagal: ${e.message}`, {
-                            quoted: safeQuote,
-                        });
-                    } finally {
-                        await cleanup(out);
-                    }
-                });
-            }
-
-            if (cmd === '.karaoke' || cmd === '.vokaloff') {
-                return queue.add(async () => {
-                    let out;
-                    try {
-                        const res = await downloadQuotedOrOwnMedia(m);
-                        if (!res.isAudio && !res.isVideo) {
-                            await cleanup(res.out);
-                            throw new Error('Harap balas ke AUDIO atau VIDEO.');
-                        }
-                        out = res.out;
-                    } catch (e) {
-                        return reply(jid, `❌ ${e.message}`, {
-                            quoted: safeQuote,
-                        });
-                    }
-
-                    await reply(
-                        jid,
-                        '⏳ Tunggu yaa bitaa... sedang memisahkan vokal...',
-                        { quoted: safeQuote },
-                    );
-
-                    try {
-                        const { path: resultPath, fileName } =
-                            await applyKaraoke(out);
-                        await ensureWithinLimit(resultPath);
-
-                        await sendAudio(
-                            jid,
-                            resultPath,
-                            fileName,
-                            'audio/mp4',
-                            { quoted: safeQuote },
-                        );
-                        await cleanup(resultPath);
-                    } catch (e) {
-                        console.error('Karaoke Error:', e);
                         await reply(jid, `❌ Gagal: ${e.message}`, {
                             quoted: safeQuote,
                         });
