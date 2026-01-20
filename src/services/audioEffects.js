@@ -1,6 +1,12 @@
 import ffmpeg from '../utils/ffmpeg.js';
 import { tempPath } from '../utils/temp.js';
 import { promises as fsp } from 'fs';
+import { spawn } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 /**
  * Apply pitch shift to an audio file
@@ -62,27 +68,72 @@ export async function applyPitchShift(inputPath, semitones) {
 }
 
 /**
- * Apply karaoke effect (vocal removal) using phase cancellation
- * @param {string} inputPath
+ * Apply AI-powered vocal separation using Demucs
+ * @param {string} inputPath - Path to input audio file
+ * @param {boolean} keepVocals - If true, return vocals only; if false, return instrumental
  * @returns {Promise<{path: string, fileName: string}>}
  */
-export async function applyKaraoke(inputPath) {
-    const out = tempPath('mp3');
+export async function applyKaraoke(inputPath, keepVocals = false) {
+    const outputDir = path.dirname(inputPath);
+    const stemType = keepVocals ? 'vocals' : 'no_vocals';
+    const scriptPath = path.join(__dirname, '../../scripts/demucs_separate.py');
+
+    // Call Python Demucs script
     await new Promise((resolve, reject) => {
-        ffmpeg(inputPath)
-            // stereotools phase cancellation method
-            .audioFilters('stereotools=mlev=0.015625')
-            .format('mp3')
-            .on('error', reject)
-            .on('end', resolve)
-            .save(out);
+        const proc = spawn('python3', [
+            scriptPath,
+            inputPath,
+            outputDir,
+            stemType,
+        ]);
+
+        let stderr = '';
+        proc.stderr.on('data', (data) => {
+            stderr += data.toString();
+        });
+
+        proc.on('close', (code) => {
+            if (code === 0) {
+                resolve();
+            } else {
+                reject(new Error(`Demucs failed: ${stderr}`));
+            }
+        });
+
+        proc.on('error', (err) => {
+            reject(new Error(`Failed to start Demucs: ${err.message}`));
+        });
     });
 
+    // Find the result WAV file
+    const wavPath = path.join(outputDir, `${stemType}.wav`);
+
     try {
-        await fsp.stat(out);
+        await fsp.stat(wavPath);
     } catch (e) {
-        throw new Error('FFmpeg failed to create karaoke file.');
+        throw new Error('Demucs failed to create output file.');
     }
 
-    return { path: out, fileName: 'karaoke_vocal_removed.mp3' };
+    // Convert WAV to MP3 for smaller file size
+    const mp3Out = tempPath('mp3');
+    await new Promise((resolve, reject) => {
+        ffmpeg(wavPath)
+            .format('mp3')
+            .audioBitrate('192k')
+            .on('error', reject)
+            .on('end', resolve)
+            .save(mp3Out);
+    });
+
+    // Cleanup WAV file
+    try {
+        await fsp.unlink(wavPath);
+    } catch (e) {
+        // Ignore cleanup errors
+    }
+
+    return {
+        path: mp3Out,
+        fileName: keepVocals ? 'vocals_only.mp3' : 'instrumental.mp3',
+    };
 }
