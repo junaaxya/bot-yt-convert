@@ -181,22 +181,39 @@ export function createMessageHandler(sock, logger = console) {
 
         try {
             if (cmd === '.help' || cmd === '.menu') {
-                await reply(
-                    jid,
-                    `🤖 *WhatsApp Converter Bot*
+                const menuText = `
+╔══════════════════════════════╗
+║   🎵 *BITAA MUSIC BOT* 🎵   ║
+╚══════════════════════════════╝
 
-Daftar Perintah:
-• *.ytmp3 <url>* – Download YouTube jadi MP3 (Lagu)
-• *.ytmp4 <url>* – Download YouTube jadi MP4 (Video)
-• *.pitch <angka>* – Ubah nada audio (Reply audio/video)
-  Contoh: *.pitch -2* (Suara Berat), *.pitch 2* (Chipmunk)
-• *.karaoke* / *.vokaloff* – Hilangkan vokal (Mode Karaoke)
-• *.to_mp3* – Jadikan MP3 (Reply video)
-• *.to_mp4* – Jadikan MP4 (Reply audio/sticker)
+┌──────────────────────────────┐
+│  📥 *DOWNLOAD YOUTUBE*      │
+└──────────────────────────────┘
+▸ *.ytmp3* <url> → Download Lagu
+▸ *.ytmp4* <url> → Download Video
 
-Batas: Durasi ≤ ${CONFIG.MAX_DURATION_SEC / 60} menit, Ukuran ≤ ${CONFIG.MAX_FILE_MB} MB.`,
-                    { quoted: safeQuote },
-                );
+┌──────────────────────────────┐
+│  🎹 *AUDIO TOOLS*            │
+└──────────────────────────────┘
+▸ *.pitch* <-12 s/d +12>
+   🔽 Turunkan nada: *.pitch -2*
+   🔼 Naikkan nada: *.pitch 2*
+
+▸ *.karaoke* / *.vokaloff*
+   🎤 Hapus vokal dengan AI
+   (Proses ~20 detik)
+
+┌──────────────────────────────┐
+│  🔄 *KONVERSI*               │
+└──────────────────────────────┘
+▸ *.to_mp3* → Video jadi Audio
+▸ *.to_mp4* → Audio jadi Video
+
+───────────────────────────────
+⚠️ *Batas:* ${CONFIG.MAX_DURATION_SEC / 60} menit | ${CONFIG.MAX_FILE_MB} MB
+💖 Bot by: *Bitaa*
+`;
+                await reply(jid, menuText.trim(), { quoted: safeQuote });
                 return;
             }
 
@@ -354,16 +371,36 @@ Batas: Durasi ≤ ${CONFIG.MAX_DURATION_SEC / 60} menit, Ukuran ≤ ${CONFIG.MAX
                         });
                     }
 
+                    // Progress message 1
                     await reply(
                         jid,
-                        '⏳ Tunggu yaa bitaa... sedang memisahkan vokal...',
+                        `⏳ *Proses Karaoke AI*\n\n█░░░░░░░░░ 10%\n_Menganalisis audio..._`,
                         { quoted: safeQuote },
                     );
 
                     try {
+                        // Progress message 2 (after a short delay)
+                        setTimeout(async () => {
+                            try {
+                                await reply(
+                                    jid,
+                                    `⏳ *Proses Karaoke AI*\n\n█████░░░░░ 50%\n_Memisahkan vokal dengan AI..._`,
+                                    { quoted: safeQuote },
+                                );
+                            } catch (e) {}
+                        }, 8000);
+
                         const { path: resultPath, fileName } =
                             await applyKaraoke(out);
                         await ensureWithinLimit(resultPath);
+
+                        // Final progress
+                        await reply(
+                            jid,
+                            `✅ *Selesai!*\n\n██████████ 100%\n_Mengirim hasil..._`,
+                            { quoted: safeQuote },
+                        );
+
                         await sendAudio(
                             jid,
                             resultPath,
@@ -374,7 +411,7 @@ Batas: Durasi ≤ ${CONFIG.MAX_DURATION_SEC / 60} menit, Ukuran ≤ ${CONFIG.MAX
                         await cleanup(resultPath);
                     } catch (e) {
                         console.error('Karaoke Error:', e);
-                        await reply(jid, `❌ Gagal: ${e.message}`, {
+                        await reply(jid, `❌ *Gagal!*\n\n${e.message}`, {
                             quoted: safeQuote,
                         });
                     } finally {

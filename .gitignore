@@ -1,4 +1,4 @@
 node_modules/
-.Dockerfile
-/Dockerfile
 Dockerfile
+.Dockerfile
+docker-compose.yml
