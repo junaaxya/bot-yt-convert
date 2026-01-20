@@ -211,7 +211,7 @@ export function createMessageHandler(sock, logger = console) {
 
 ───────────────────────────────
 ⚠️ *Batas:* ${CONFIG.MAX_DURATION_SEC / 60} menit | ${CONFIG.MAX_FILE_MB} MB
-💖 Bot by: *Bitaa*
+💖 Bot: *Bitaa*
 `;
                 await reply(jid, menuText.trim(), { quoted: safeQuote });
                 return;
