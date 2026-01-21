@@ -277,15 +277,22 @@ export async function generateLyricsVideo(inputPath, isVideo = true) {
     if (isVideo) {
         const mp4Out = tempPath('mp4');
 
-        // Escape path for FFmpeg subtitles filter (handle Windows paths)
+        // Escape path for FFmpeg subtitles filter (handle Windows/Linux paths)
         const escapedSrtPath = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
 
         await new Promise((resolve, reject) => {
             ffmpeg(inputPath)
                 .outputOptions([
-                    `-vf subtitles='${escapedSrtPath}':force_style='FontSize=24,FontName=Arial,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Outline=2,Shadow=1,Alignment=2,MarginV=30'`,
+                    // Filter lirik dengan style yang lebih visible
+                    `-vf subtitles='${escapedSrtPath}':force_style='FontSize=18,FontName=Arial,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Outline=2,Shadow=1,Alignment=2,MarginV=20'`,
+                    // PENGATURAN KOMPRESI:
+                    '-vcodec libx264', // Re-encode menggunakan codec H.264
+                    '-crf 28', // Nilai 28 menjaga ukuran file tetap kecil
+                    '-preset faster', // Kecepatan proses encoding
+                    '-pix_fmt yuv420p', // Memastikan video kompatibel di semua HP
                 ])
-                .audioCodec('copy')
+                .audioCodec('aac') // Re-encode audio to AAC for compatibility
+                .audioBitrate('128k')
                 .format('mp4')
                 .on('error', reject)
                 .on('end', resolve)
