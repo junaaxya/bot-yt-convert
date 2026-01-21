@@ -290,7 +290,8 @@ export async function generateLyricsVideo(inputPath, isVideo = true) {
             ffmpeg(inputPath)
                 .videoFilters([
                     // Subtitle filter dengan font besar dan posisi yang jelas
-                    `subtitles=${srtToUse}:force_style='FontSize=28,FontName=Arial,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=3,Shadow=2,Alignment=2,MarginV=40'`,
+                    // Note: Escape spaces in font name for FFmpeg
+                    `subtitles=${srtToUse}:force_style='FontSize=28,FontName=Liberation\\\\ Sans,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=3,Shadow=2,Alignment=2,MarginV=40'`,
                 ])
                 .outputOptions([
                     // PENGATURAN KOMPRESI:
