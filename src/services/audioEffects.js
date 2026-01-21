@@ -277,31 +277,44 @@ export async function generateLyricsVideo(inputPath, isVideo = true) {
     if (isVideo) {
         const mp4Out = tempPath('mp4');
 
-        // Escape path for FFmpeg subtitles filter (handle Windows/Linux paths)
-        const escapedSrtPath = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
+        // Copy SRT to a simpler path without special characters
+        const simpleSrtPath = '/tmp/subs.srt';
+        try {
+            await fsp.copyFile(srtPath, simpleSrtPath);
+        } catch (e) {
+            // If copy fails, use original path
+        }
+        const srtToUse = simpleSrtPath;
 
         await new Promise((resolve, reject) => {
             ffmpeg(inputPath)
-                .outputOptions([
-                    // Filter lirik dengan style yang lebih visible
-                    `-vf subtitles='${escapedSrtPath}':force_style='FontSize=18,FontName=Arial,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Outline=2,Shadow=1,Alignment=2,MarginV=20'`,
-                    // PENGATURAN KOMPRESI:
-                    '-vcodec libx264', // Re-encode menggunakan codec H.264
-                    '-crf 28', // Nilai 28 menjaga ukuran file tetap kecil
-                    '-preset faster', // Kecepatan proses encoding
-                    '-pix_fmt yuv420p', // Memastikan video kompatibel di semua HP
+                .videoFilters([
+                    // Subtitle filter dengan font besar dan posisi yang jelas
+                    `subtitles=${srtToUse}:force_style='FontSize=28,FontName=Arial,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=3,Shadow=2,Alignment=2,MarginV=40'`,
                 ])
-                .audioCodec('aac') // Re-encode audio to AAC for compatibility
+                .outputOptions([
+                    // PENGATURAN KOMPRESI:
+                    '-c:v libx264', // Re-encode menggunakan codec H.264
+                    '-crf 26', // Kualitas lebih baik untuk lirik terlihat jelas
+                    '-preset fast', // Kecepatan proses encoding
+                    '-pix_fmt yuv420p', // Memastikan video kompatibel di semua HP
+                    '-movflags +faststart', // Optimize for streaming
+                ])
+                .audioCodec('aac')
                 .audioBitrate('128k')
                 .format('mp4')
-                .on('error', reject)
+                .on('error', (err) => {
+                    console.error('FFmpeg subtitle error:', err.message);
+                    reject(err);
+                })
                 .on('end', resolve)
                 .save(mp4Out);
         });
 
-        // Cleanup SRT
+        // Cleanup SRT files
         try {
             await fsp.unlink(srtPath);
+            await fsp.unlink(simpleSrtPath);
         } catch (e) {}
 
         return {
