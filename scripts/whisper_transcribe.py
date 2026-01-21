@@ -8,7 +8,7 @@ Usage:
 """
 import sys
 import whisper
-
+import torch
 def format_time(seconds):
     """Convert seconds to SRT time format (HH:MM:SS,mmm)"""
     h = int(seconds // 3600)
