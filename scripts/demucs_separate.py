@@ -37,7 +37,7 @@ def main():
             input_file
         ], check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
-        print(f"Demucs error: {e.stderr}")
+        print(f"Detail Error: {e.stderr}", file=sys.stderr)
         sys.exit(1)
     
     # Find output file
