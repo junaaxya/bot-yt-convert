@@ -137,3 +137,91 @@ export async function applyKaraoke(inputPath, keepVocals = false) {
         fileName: keepVocals ? 'vocals_only.mp3' : 'instrumental.mp3',
     };
 }
+
+/**
+ * Apply AI-powered vocal separation for VIDEO files
+ * Returns MP4 with original video + instrumental audio
+ * @param {string} inputPath - Path to input video file
+ * @param {boolean} keepVocals - If true, return vocals only; if false, return instrumental
+ * @returns {Promise<{path: string, fileName: string}>}
+ */
+export async function applyKaraokeVideo(inputPath, keepVocals = false) {
+    const outputDir = path.dirname(inputPath);
+    const stemType = keepVocals ? 'vocals' : 'no_vocals';
+    const scriptPath = path.join(__dirname, '../../scripts/demucs_separate.py');
+
+    // 1. Extract audio from video
+    const audioPath = tempPath('wav');
+    await new Promise((resolve, reject) => {
+        ffmpeg(inputPath)
+            .noVideo()
+            .audioCodec('pcm_s16le')
+            .audioFrequency(44100)
+            .format('wav')
+            .on('error', reject)
+            .on('end', resolve)
+            .save(audioPath);
+    });
+
+    // 2. Process audio with Demucs
+    await new Promise((resolve, reject) => {
+        const proc = spawn('python3', [
+            scriptPath,
+            audioPath,
+            outputDir,
+            stemType,
+        ]);
+        let stderr = '';
+        proc.stderr.on('data', (data) => {
+            stderr += data.toString();
+        });
+        proc.on('close', (code) => {
+            if (code === 0) resolve();
+            else reject(new Error(`Demucs failed: ${stderr}`));
+        });
+        proc.on('error', (err) =>
+            reject(new Error(`Failed to start Demucs: ${err.message}`)),
+        );
+    });
+
+    // 3. Get processed audio
+    const processedAudioPath = path.join(outputDir, `${stemType}.wav`);
+    try {
+        await fsp.stat(processedAudioPath);
+    } catch (e) {
+        throw new Error('Demucs failed to create output file.');
+    }
+
+    // 4. Mux processed audio with original video
+    const mp4Out = tempPath('mp4');
+    await new Promise((resolve, reject) => {
+        ffmpeg()
+            .input(inputPath)
+            .input(processedAudioPath)
+            .outputOptions([
+                '-c:v copy', // Copy video stream without re-encoding
+                '-c:a aac', // Encode audio as AAC
+                '-b:a 192k', // Audio bitrate
+                '-map 0:v:0', // Take video from first input
+                '-map 1:a:0', // Take audio from second input
+                '-shortest', // Match shortest stream
+            ])
+            .format('mp4')
+            .on('error', reject)
+            .on('end', resolve)
+            .save(mp4Out);
+    });
+
+    // 5. Cleanup temp files
+    try {
+        await fsp.unlink(audioPath);
+        await fsp.unlink(processedAudioPath);
+    } catch (e) {
+        // Ignore cleanup errors
+    }
+
+    return {
+        path: mp4Out,
+        fileName: keepVocals ? 'vocals_only.mp4' : 'instrumental.mp4',
+    };
+}

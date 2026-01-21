@@ -8,7 +8,11 @@ import {
     ensureWithinLimit,
 } from '../services/converter.js';
 import { downloadYouTubeMP3, downloadYouTubeMP4 } from '../services/youtube.js';
-import { applyPitchShift, applyKaraoke } from '../services/audioEffects.js';
+import {
+    applyPitchShift,
+    applyKaraoke,
+    applyKaraokeVideo,
+} from '../services/audioEffects.js';
 import { CONFIG } from '../config.js';
 
 export function createMessageHandler(sock, logger = console) {
@@ -352,6 +356,7 @@ export function createMessageHandler(sock, logger = console) {
             if (cmd === '.karaoke' || cmd === '.vokaloff') {
                 return queue.add(async () => {
                     let out;
+                    let isVideo = false;
                     try {
                         const res = await downloadQuotedOrOwnMedia(m);
                         if (!res.isAudio && !res.isVideo) {
@@ -359,6 +364,7 @@ export function createMessageHandler(sock, logger = console) {
                             throw new Error('Harap balas ke AUDIO atau VIDEO.');
                         }
                         out = res.out;
+                        isVideo = res.isVideo;
                     } catch (e) {
                         return reply(jid, `❌ ${e.message}`, {
                             quoted: safeQuote,
@@ -372,16 +378,32 @@ export function createMessageHandler(sock, logger = console) {
                     );
 
                     try {
-                        const { path: resultPath, fileName } =
-                            await applyKaraoke(out);
-                        await ensureWithinLimit(resultPath);
-                        await sendAudio(
-                            jid,
-                            resultPath,
-                            fileName,
-                            'audio/mp4',
-                            { quoted: safeQuote },
-                        );
+                        let resultPath, fileName;
+
+                        if (isVideo) {
+                            // Video input -> return MP4
+                            const result = await applyKaraokeVideo(out);
+                            resultPath = result.path;
+                            fileName = result.fileName;
+                            await ensureWithinLimit(resultPath);
+                            await sendVideo(jid, resultPath, fileName, {
+                                quoted: safeQuote,
+                            });
+                        } else {
+                            // Audio input -> return MP3
+                            const result = await applyKaraoke(out);
+                            resultPath = result.path;
+                            fileName = result.fileName;
+                            await ensureWithinLimit(resultPath);
+                            await sendAudio(
+                                jid,
+                                resultPath,
+                                fileName,
+                                'audio/mp4',
+                                { quoted: safeQuote },
+                            );
+                        }
+
                         await cleanup(resultPath);
                     } catch (e) {
                         console.error('Karaoke Error:', e);
