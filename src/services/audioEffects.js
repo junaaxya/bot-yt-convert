@@ -241,9 +241,24 @@ export async function generateLyricsVideo(inputPath, isVideo = true) {
     );
     const srtPath = path.join(outputDir, 'lyrics.srt');
 
-    // 1. Transcribe audio using Whisper
+    // 1. Extract vocals only using Demucs (to reduce Whisper hallucination)
+    console.log('Extracting vocals for cleaner transcription...');
+    let vocalsPath;
+    try {
+        const vocalsResult = await applyKaraoke(inputPath, true); // true = keep vocals only
+        vocalsPath = vocalsResult.path;
+        console.log('Vocals extracted:', vocalsPath);
+    } catch (e) {
+        console.error(
+            'Vocals extraction failed, using original audio:',
+            e.message,
+        );
+        vocalsPath = inputPath; // Fallback to original if extraction fails
+    }
+
+    // 2. Transcribe vocals using Whisper (more accurate without music)
     await new Promise((resolve, reject) => {
-        const proc = spawn('python3', [scriptPath, inputPath, srtPath]);
+        const proc = spawn('python3', [scriptPath, vocalsPath, srtPath]);
 
         let stderr = '';
         proc.stdout.on('data', (data) => {
@@ -265,6 +280,13 @@ export async function generateLyricsVideo(inputPath, isVideo = true) {
             reject(new Error(`Failed to start Whisper: ${err.message}`));
         });
     });
+
+    // Cleanup vocals file if different from input
+    if (vocalsPath !== inputPath) {
+        try {
+            await fsp.unlink(vocalsPath);
+        } catch (e) {}
+    }
 
     // Check SRT file exists
     try {

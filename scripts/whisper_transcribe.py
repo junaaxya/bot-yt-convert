@@ -29,8 +29,8 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
     
-    print(f"Loading Whisper model (small)...")
-    model = whisper.load_model("small", device=device)
+    print(f"Loading Whisper model (medium)...")
+    model = whisper.load_model("medium", device=device)
     
     print(f"Transcribing: {input_file}")
     transcribe_options = {}
