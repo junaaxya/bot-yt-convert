@@ -12,6 +12,7 @@ import {
     applyPitchShift,
     applyKaraoke,
     applyKaraokeVideo,
+    generateLyricsVideo,
 } from '../services/audioEffects.js';
 import { CONFIG } from '../config.js';
 
@@ -202,6 +203,9 @@ export function createMessageHandler(sock, logger = console) {
 
 ▸ *.karaoke* / *.vokaloff*
    🎤 Hapus vokal dengan AI
+
+▸ *.lirik*
+   📝 Generate lirik otomatis + overlay
 
 ━━━━━━━━━━━━━━━━━━━━
 🔄 *KONVERSI*
@@ -407,6 +411,57 @@ export function createMessageHandler(sock, logger = console) {
                         await cleanup(resultPath);
                     } catch (e) {
                         console.error('Karaoke Error:', e);
+                        await reply(jid, `❌ Gagal: ${e.message}`, {
+                            quoted: safeQuote,
+                        });
+                    } finally {
+                        await cleanup(out);
+                    }
+                });
+            }
+
+            if (cmd === '.lirik') {
+                return queue.add(async () => {
+                    let out;
+                    let isVideo = false;
+                    try {
+                        const res = await downloadQuotedOrOwnMedia(m);
+                        if (!res.isAudio && !res.isVideo) {
+                            await cleanup(res.out);
+                            throw new Error('Harap balas ke AUDIO atau VIDEO.');
+                        }
+                        out = res.out;
+                        isVideo = res.isVideo;
+                    } catch (e) {
+                        return reply(jid, `❌ ${e.message}`, {
+                            quoted: safeQuote,
+                        });
+                    }
+
+                    await reply(
+                        jid,
+                        '⏳ Tunggu yaa bitaa... sedang generate lirik dengan AI (~30 detik)...',
+                        { quoted: safeQuote },
+                    );
+
+                    try {
+                        if (!isVideo) {
+                            // Audio only - convert to simple video first
+                            const mp4Temp = await mp3ToMp4(out);
+                            await cleanup(out);
+                            out = mp4Temp;
+                            isVideo = true;
+                        }
+
+                        const { path: resultPath, fileName } =
+                            await generateLyricsVideo(out, isVideo);
+                        await ensureWithinLimit(resultPath);
+                        await sendVideo(jid, resultPath, fileName, {
+                            quoted: safeQuote,
+                        });
+                        await cleanup(resultPath);
+                    } catch (e) {
+                        console.error('Lyrics Error:', e);
                         await reply(jid, `❌ Gagal: ${e.message}`, {
                             quoted: safeQuote,
                         });

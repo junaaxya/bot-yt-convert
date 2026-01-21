@@ -225,3 +225,88 @@ export async function applyKaraokeVideo(inputPath, keepVocals = false) {
         fileName: keepVocals ? 'vocals_only.mp4' : 'instrumental.mp4',
     };
 }
+
+/**
+ * Generate lyrics from audio/video and overlay on video
+ * Uses Whisper AI for transcription and FFmpeg for subtitle overlay
+ * @param {string} inputPath - Path to input video/audio file
+ * @param {boolean} isVideo - Whether input is video
+ * @returns {Promise<{path: string, fileName: string, srtPath: string}>}
+ */
+export async function generateLyricsVideo(inputPath, isVideo = true) {
+    const outputDir = path.dirname(inputPath);
+    const scriptPath = path.join(
+        __dirname,
+        '../../scripts/whisper_transcribe.py',
+    );
+    const srtPath = path.join(outputDir, 'lyrics.srt');
+
+    // 1. Transcribe audio using Whisper
+    await new Promise((resolve, reject) => {
+        const proc = spawn('python3', [scriptPath, inputPath, srtPath]);
+
+        let stderr = '';
+        proc.stdout.on('data', (data) => {
+            console.log('Whisper:', data.toString());
+        });
+        proc.stderr.on('data', (data) => {
+            stderr += data.toString();
+        });
+
+        proc.on('close', (code) => {
+            if (code === 0) {
+                resolve();
+            } else {
+                reject(new Error(`Whisper failed: ${stderr}`));
+            }
+        });
+
+        proc.on('error', (err) => {
+            reject(new Error(`Failed to start Whisper: ${err.message}`));
+        });
+    });
+
+    // Check SRT file exists
+    try {
+        await fsp.stat(srtPath);
+    } catch (e) {
+        throw new Error('Whisper failed to create subtitle file.');
+    }
+
+    // 2. If input is video, overlay subtitles
+    if (isVideo) {
+        const mp4Out = tempPath('mp4');
+
+        // Escape path for FFmpeg subtitles filter (handle Windows paths)
+        const escapedSrtPath = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
+
+        await new Promise((resolve, reject) => {
+            ffmpeg(inputPath)
+                .outputOptions([
+                    `-vf subtitles='${escapedSrtPath}':force_style='FontSize=24,FontName=Arial,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Outline=2,Shadow=1,Alignment=2,MarginV=30'`,
+                ])
+                .audioCodec('copy')
+                .format('mp4')
+                .on('error', reject)
+                .on('end', resolve)
+                .save(mp4Out);
+        });
+
+        // Cleanup SRT
+        try {
+            await fsp.unlink(srtPath);
+        } catch (e) {}
+
+        return {
+            path: mp4Out,
+            fileName: 'lyrics_video.mp4',
+        };
+    } else {
+        // If audio only, just return the SRT file path
+        // (We'll handle this in message handler by converting to video first)
+        return {
+            path: srtPath,
+            fileName: 'lyrics.srt',
+        };
+    }
+}
