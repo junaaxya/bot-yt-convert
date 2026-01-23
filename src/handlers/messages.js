@@ -454,7 +454,7 @@ export function createMessageHandler(sock, logger = console) {
                         }
 
                         const { path: resultPath, fileName } =
-                            await generateLyricsVideo(out, isVideo);
+                            await generateLyricsVideo(out, isVideo, 'id');
                         await ensureWithinLimit(resultPath);
                         await sendVideo(jid, resultPath, fileName, {
                             quoted: safeQuote,

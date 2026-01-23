@@ -231,9 +231,14 @@ export async function applyKaraokeVideo(inputPath, keepVocals = false) {
  * Uses Whisper AI for transcription and FFmpeg for subtitle overlay
  * @param {string} inputPath - Path to input video/audio file
  * @param {boolean} isVideo - Whether input is video
+ * @param {string} lang - Language code for transcription (default: 'id' for Indonesian)
  * @returns {Promise<{path: string, fileName: string, srtPath: string}>}
  */
-export async function generateLyricsVideo(inputPath, isVideo = true) {
+export async function generateLyricsVideo(
+    inputPath,
+    isVideo = true,
+    lang = 'id',
+) {
     const outputDir = path.dirname(inputPath);
     const scriptPath = path.join(
         __dirname,
@@ -258,7 +263,7 @@ export async function generateLyricsVideo(inputPath, isVideo = true) {
 
     // 2. Transcribe vocals using Whisper (more accurate without music)
     await new Promise((resolve, reject) => {
-        const proc = spawn('python3', [scriptPath, vocalsPath, srtPath]);
+        const proc = spawn('python3', [scriptPath, vocalsPath, srtPath, lang]);
 
         let stderr = '';
         proc.stdout.on('data', (data) => {
@@ -313,7 +318,7 @@ export async function generateLyricsVideo(inputPath, isVideo = true) {
                 .videoFilters([
                     // Subtitle filter dengan font besar dan posisi yang jelas
                     // Note: Escape spaces in font name for FFmpeg
-                    `subtitles=${srtToUse}:force_style='FontSize=28,FontName=Liberation\\\\ Sans,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=3,Shadow=2,Alignment=2,MarginV=40'`,
+                    `subtitles=${srtToUse}:force_style='FontSize=28,FontName=Liberation\\\\ Sans,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=3,Shadow=2,Alignment=2,MarginV=30'`,
                 ])
                 .outputOptions([
                     // PENGATURAN KOMPRESI:
@@ -324,7 +329,7 @@ export async function generateLyricsVideo(inputPath, isVideo = true) {
                     '-movflags +faststart', // Optimize for streaming
                 ])
                 .audioCodec('aac')
-                .audioBitrate('128k')
+                .audioBitrate('192k') // Higher bitrate for competition quality
                 .format('mp4')
                 .on('error', (err) => {
                     console.error('FFmpeg subtitle error:', err.message);
