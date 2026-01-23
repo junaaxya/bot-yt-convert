@@ -246,24 +246,11 @@ export async function generateLyricsVideo(
     );
     const srtPath = path.join(outputDir, 'lyrics.srt');
 
-    // 1. Extract vocals only using Demucs (to reduce Whisper hallucination)
-    console.log('Extracting vocals for cleaner transcription...');
-    let vocalsPath;
-    try {
-        const vocalsResult = await applyKaraoke(inputPath, true); // true = keep vocals only
-        vocalsPath = vocalsResult.path;
-        console.log('Vocals extracted:', vocalsPath);
-    } catch (e) {
-        console.error(
-            'Vocals extraction failed, using original audio:',
-            e.message,
-        );
-        vocalsPath = inputPath; // Fallback to original if extraction fails
-    }
-
-    // 2. Transcribe vocals using Whisper (more accurate without music)
+    // 1. Transcribe audio using Whisper directly (original audio works better)
+    // Note: Vocals extraction was tested but reduced accuracy, so using original
+    console.log('Transcribing audio with Whisper...');
     await new Promise((resolve, reject) => {
-        const proc = spawn('python3', [scriptPath, vocalsPath, srtPath, lang]);
+        const proc = spawn('python3', [scriptPath, inputPath, srtPath, lang]);
 
         let stderr = '';
         proc.stdout.on('data', (data) => {
@@ -285,13 +272,6 @@ export async function generateLyricsVideo(
             reject(new Error(`Failed to start Whisper: ${err.message}`));
         });
     });
-
-    // Cleanup vocals file if different from input
-    if (vocalsPath !== inputPath) {
-        try {
-            await fsp.unlink(vocalsPath);
-        } catch (e) {}
-    }
 
     // Check SRT file exists
     try {
@@ -318,7 +298,7 @@ export async function generateLyricsVideo(
                 .videoFilters([
                     // Subtitle filter dengan font besar dan posisi yang jelas
                     // Note: Escape spaces in font name for FFmpeg
-                    `subtitles=${srtToUse}:force_style='FontSize=28,FontName=Liberation\\\\ Sans,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=3,Shadow=2,Alignment=2,MarginV=30'`,
+                    `subtitles=${srtToUse}:force_style='FontSize=18,FontName=Liberation\\\\ Sans,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV=25'`,
                 ])
                 .outputOptions([
                     // PENGATURAN KOMPRESI:
