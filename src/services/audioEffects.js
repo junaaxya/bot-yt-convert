@@ -90,18 +90,28 @@ export async function applyKaraoke(inputPath, keepVocals = false) {
         let stderr = '';
         proc.stderr.on('data', (data) => {
             stderr += data.toString();
+            // Log real-time progress for debugging
+            if (data.toString().includes('Separating')) {
+                console.log('Demucs Progress:', data.toString().trim());
+            }
         });
 
         proc.on('close', (code) => {
             if (code === 0) {
                 resolve();
             } else {
-                reject(new Error(`Demucs failed: ${stderr}`));
+                // Enhanced error message
+                console.error('Demucs Failed Details:', stderr);
+                reject(
+                    new Error(
+                        `Demucs process failed with code ${code}: ${stderr}`,
+                    ),
+                );
             }
         });
 
         proc.on('error', (err) => {
-            reject(new Error(`Failed to start Demucs: ${err.message}`));
+            reject(new Error(`Failed to spawn Demucs process: ${err.message}`));
         });
     });
 

@@ -42,9 +42,32 @@ def main():
         print(f"Detail Error: {e.stderr}", file=sys.stderr)
         sys.exit(1)
     
-    # Find output file
+    # Find output file dynamically (handles htdemucs, htdemucs_ft, or other models)
     base = os.path.splitext(os.path.basename(input_file))[0]
-    result_dir = os.path.join(output_dir, 'htdemucs', base)
+    
+    # Demucs creates a subfolder based on the model name
+    # We try to find where it is
+    possible_folders = ['htdemucs_ft', 'htdemucs', 'mdx_extra_q']
+    result_dir = None
+    
+    for folder in possible_folders:
+        candidate = os.path.join(output_dir, folder, base)
+        if os.path.exists(candidate):
+            result_dir = candidate
+            break
+            
+    if not result_dir:
+        # Fallback: check any subdirectory in output_dir
+        subdirs = [os.path.join(output_dir, d) for d in os.listdir(output_dir) if os.path.isdir(os.path.join(output_dir, d))]
+        for sub in subdirs:
+             candidate = os.path.join(sub, base)
+             if os.path.exists(candidate):
+                 result_dir = candidate
+                 break
+    
+    if not result_dir:
+        print(f"Error: Could not find Demucs output directory for base: {base}", file=sys.stderr)
+        sys.exit(1)
     
     if stem_type == 'vocals':
         src = os.path.join(result_dir, 'vocals.wav')
@@ -54,18 +77,23 @@ def main():
         final_name = 'no_vocals.wav'
     
     if not os.path.exists(src):
-        print(f"Error: Expected output not found: {src}")
+        print(f"Error: Expected output not found: {src}", file=sys.stderr)
         sys.exit(1)
     
     # Copy to output directory
     final = os.path.join(output_dir, final_name)
     shutil.copy(src, final)
     
-    # Cleanup demucs temp files
+    # Cleanup demucs temp files (delete ALL model subfolders found)
     try:
-        shutil.rmtree(os.path.join(output_dir, 'htdemucs'))
-    except:
-        pass
+        for folder in os.listdir(output_dir):
+            folder_path = os.path.join(output_dir, folder)
+            if os.path.isdir(folder_path) and folder != '.' and folder != '..':
+                # Only delete if it looks like a demucs model folder (safe check)
+                if folder in possible_folders or folder == 'htdemucs_ft':
+                     shutil.rmtree(folder_path)
+    except Exception as e:
+        print(f"Warning: Cleanup failed: {e}", file=sys.stderr)
     
     # Print result path (will be captured by Node.js)
     print(final)
