@@ -234,6 +234,23 @@ export async function applyKaraokeVideo(inputPath, keepVocals = false) {
  * @param {string} lang - Language code for transcription (default: 'id' for Indonesian)
  * @returns {Promise<{path: string, fileName: string, srtPath: string}>}
  */
+async function preprocessAudio(inputPath) {
+    const outPath = tempPath('wav');
+    await new Promise((resolve, reject) => {
+        ffmpeg(inputPath)
+            .audioFilters([
+                'loudnorm', // Normalize volume
+                'aresample=16000', // Convert to 16kHz (Whisper native)
+                'aformat=channel_layouts=mono', // Convert to mono
+            ])
+            .format('wav')
+            .on('error', reject)
+            .on('end', resolve)
+            .save(outPath);
+    });
+    return outPath;
+}
+
 export async function generateLyricsVideo(
     inputPath,
     isVideo = true,
@@ -249,8 +266,24 @@ export async function generateLyricsVideo(
     // 1. Transcribe audio using Whisper directly (original audio works better)
     // Note: Vocals extraction was tested but reduced accuracy, so using original
     console.log('Transcribing audio with Whisper...');
+
+    // Preprocess audio (normalize + 16kHz mono) to fix iPhone/HEVC issues
+    let processedAudioPath;
+    try {
+        console.log('Preprocessing audio (normalize + 16kHz)...');
+        processedAudioPath = await preprocessAudio(inputPath);
+    } catch (e) {
+        console.error('Audio preprocessing failed, using original:', e);
+        processedAudioPath = inputPath;
+    }
+
     await new Promise((resolve, reject) => {
-        const proc = spawn('python3', [scriptPath, inputPath, srtPath, lang]);
+        const proc = spawn('python3', [
+            scriptPath,
+            processedAudioPath,
+            srtPath,
+            lang,
+        ]);
 
         let stderr = '';
         proc.stdout.on('data', (data) => {
@@ -272,6 +305,13 @@ export async function generateLyricsVideo(
             reject(new Error(`Failed to start Whisper: ${err.message}`));
         });
     });
+
+    // Cleanup processed audio
+    if (processedAudioPath !== inputPath) {
+        try {
+            await fsp.unlink(processedAudioPath);
+        } catch (e) {}
+    }
 
     // Check SRT file exists
     try {

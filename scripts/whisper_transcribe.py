@@ -37,9 +37,14 @@ def main():
     
     # Best practice settings for better accuracy
     transcribe_options = {
+        'initial_prompt': "Berikut adalah lirik lagu dalam bahasa Indonesia:", # Context clue
+        'beam_size': 5,               # Higher accuracy with beam search
+        'best_of': 5,                 # Check best of 5 candidates
+        'patience': 1.0,              # patience for beam search
+        'length_penalty': 0.0,        # penalty for length
         'word_timestamps': True,      # Enable word-level timestamps
         'condition_on_previous_text': True,  # Use context from previous segments
-        'temperature': 0,             # Lower temperature = more deterministic
+        'temperature': 0.0,           # Deterministic output
         'compression_ratio_threshold': 2.4,  # Filter out bad segments
         'no_speech_threshold': 0.6,   # Skip silence/noise
     }
