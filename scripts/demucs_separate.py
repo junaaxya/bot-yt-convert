@@ -31,8 +31,10 @@ def main():
     try:
         subprocess.run([
             'demucs',
-            '-n', 'htdemucs',
+            '-n', 'htdemucs_ft',    # Model Fine-Tuned for higher accuracy
             '--two-stems', 'vocals',
+            '--shifts', '10',       # 10x random sampling for cleaner separation
+            '--overlap', '0.25',    # Smooth transitions
             '-o', output_dir,
             input_file
         ], check=True, capture_output=True, text=True)

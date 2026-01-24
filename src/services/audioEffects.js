@@ -114,15 +114,16 @@ export async function applyKaraoke(inputPath, keepVocals = false) {
         throw new Error('Demucs failed to create output file.');
     }
 
-    // Convert WAV to MP3 for smaller file size
-    const mp3Out = tempPath('mp3');
+    // Convert WAV to M4A (AAC) for high quality & iPhone compatibility
+    const m4aOut = tempPath('m4a');
     await new Promise((resolve, reject) => {
         ffmpeg(wavPath)
-            .format('mp3')
-            .audioBitrate('192k')
+            .format('adts') // ADTS container for AAC
+            .audioCodec('aac')
+            .audioBitrate('320k') // Max quality
             .on('error', reject)
             .on('end', resolve)
-            .save(mp3Out);
+            .save(m4aOut);
     });
 
     // Cleanup WAV file
@@ -132,9 +133,18 @@ export async function applyKaraoke(inputPath, keepVocals = false) {
         // Ignore cleanup errors
     }
 
+    // Get output file size
+    let stats;
+    try {
+        stats = await fsp.stat(m4aOut);
+    } catch (e) {
+        throw new Error('Failed to stat output file.');
+    }
+
     return {
-        path: mp3Out,
-        fileName: keepVocals ? 'vocals_only.mp3' : 'instrumental.mp3',
+        path: m4aOut,
+        fileName: keepVocals ? 'vocals_only.m4a' : 'instrumental.m4a',
+        size: stats.size,
     };
 }
 
@@ -201,10 +211,11 @@ export async function applyKaraokeVideo(inputPath, keepVocals = false) {
             .outputOptions([
                 '-c:v copy', // Copy video stream without re-encoding
                 '-c:a aac', // Encode audio as AAC
-                '-b:a 192k', // Audio bitrate
+                '-b:a 320k', // Max audio quality
                 '-map 0:v:0', // Take video from first input
                 '-map 1:a:0', // Take audio from second input
                 '-shortest', // Match shortest stream
+                '-pix_fmt yuv420p', // Ensure iPhone compatibility
             ])
             .format('mp4')
             .on('error', reject)
@@ -220,9 +231,18 @@ export async function applyKaraokeVideo(inputPath, keepVocals = false) {
         // Ignore cleanup errors
     }
 
+    // Get output file size
+    let stats;
+    try {
+        stats = await fsp.stat(mp4Out);
+    } catch (e) {
+        throw new Error('Failed to stat output file.');
+    }
+
     return {
         path: mp4Out,
         fileName: keepVocals ? 'vocals_only.mp4' : 'instrumental.mp4',
+        size: stats.size,
     };
 }
 
