@@ -194,19 +194,24 @@ async function ytDlpVideoMP4(url) {
     console.log('[yt-dlp] URL:', cleanUrl(url));
 
     try {
-        // Use simplest possible download - no format restrictions
         const result = await ytDlp.execPromise([
             cleanUrl(url),
             '--ffmpeg-location',
             '/usr/bin/ffmpeg',
+            '--js-runtime',
+            'node', // Tell yt-dlp to use Node.js for JS
+            // Use Android client to bypass SABR streaming and get direct URLs
+            '--extractor-args',
+            'youtube:player_client=android',
             '-f',
-            'best[ext=mp4]/best', // Simplest: best mp4 or just best
+            'bv*[height<=?720]+ba/b[height<=?720]/bv*+ba/b', // Best video+audio, merge
+            '--merge-output-format',
+            'mp4', // Merge to MP4
             '--no-playlist',
             '--geo-bypass',
             '--no-check-certificate',
             '-o',
             out,
-            '--verbose', // Add verbose output for debugging
         ]);
         console.log('[yt-dlp] Download completed, result:', result);
     } catch (e) {
