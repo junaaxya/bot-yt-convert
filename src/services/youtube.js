@@ -198,21 +198,29 @@ async function ytDlpVideoMP4(url) {
             '--js-runtime',
             'node',
             '-f',
-            `bestvideo[height<=?720][ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]/best[height<=?720][ext=mp4][vcodec^=avc]`,
-            '--merge-output-format',
-            'mp4',
+            // Flexible format selector with fallback chain:
+            // 1. Best video (720p max) + best audio
+            // 2. Best combined (720p max)
+            // 3. Best video (any) + best audio
+            // 4. Best combined (any)
+            'bv*[height<=?720]+ba/b[height<=?720]/bv*+ba/b',
+            '--recode-video',
+            'mp4', // Force MP4 output
+            '--postprocessor-args',
+            'ffmpeg:-c:v libx264 -preset fast -crf 23 -c:a aac -b:a 192k', // iPhone compatible
             '--max-filesize',
             `${CONFIG.MAX_FILE_MB}m`,
             '--match-filter',
             `duration <= ?${CONFIG.MAX_DURATION_SEC}`,
-            '--geo-bypass', // Bypass geo restrictions
-            '--no-check-certificate', // Skip SSL issues
-            '--no-playlist', // Single video only
+            '--geo-bypass',
+            '--no-check-certificate',
+            '--no-playlist',
             '-o',
             out,
         ]);
     } catch (e) {
-        // Parse the error for user-friendly message
+        // Log error for debugging
+        console.error('[yt-dlp video error]', e.message || e);
         const userMsg = parseYouTubeError(e);
         if (userMsg) throw new Error(userMsg);
         throw new Error(
