@@ -189,7 +189,10 @@ async function ytDlpAudioMP3(url) {
 
 // <-- TAMBAHAN: Fungsi fallback yt-dlp untuk MP4
 async function ytDlpVideoMP4(url) {
-    const out = tempPath('mp4');
+    // Create base path without extension - yt-dlp will add the correct one
+    const basePath = tempPath('').replace(/\.$/, ''); // Remove trailing dot
+    const expectedOut = basePath + '.mp4';
+
     try {
         await ytDlp.execPromise([
             cleanUrl(url),
@@ -198,16 +201,10 @@ async function ytDlpVideoMP4(url) {
             '--js-runtime',
             'node',
             '-f',
-            // Flexible format selector with fallback chain:
-            // 1. Best video (720p max) + best audio
-            // 2. Best combined (720p max)
-            // 3. Best video (any) + best audio
-            // 4. Best combined (any)
-            'bv*[height<=?720]+ba/b[height<=?720]/bv*+ba/b',
-            '--recode-video',
-            'mp4', // Force MP4 output
-            '--postprocessor-args',
-            'ffmpeg:-c:v libx264 -preset fast -crf 23 -c:a aac -b:a 192k', // iPhone compatible
+            // Flexible format: prefer mp4, fallback to any then merge
+            'bestvideo[height<=?720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=?720]+bestaudio/best[height<=?720]/best',
+            '--merge-output-format',
+            'mp4', // Merge to MP4
             '--max-filesize',
             `${CONFIG.MAX_FILE_MB}m`,
             '--match-filter',
@@ -216,10 +213,9 @@ async function ytDlpVideoMP4(url) {
             '--no-check-certificate',
             '--no-playlist',
             '-o',
-            out,
+            expectedOut, // Use full path with extension
         ]);
     } catch (e) {
-        // Log error for debugging
         console.error('[yt-dlp video error]', e.message || e);
         const userMsg = parseYouTubeError(e);
         if (userMsg) throw new Error(userMsg);
@@ -228,14 +224,35 @@ async function ytDlpVideoMP4(url) {
         );
     }
 
+    // Check if file exists
     try {
-        await fsp.stat(out);
+        await fsp.stat(expectedOut);
+        return expectedOut;
     } catch (e) {
-        throw new Error(
-            '❌ Gagal unduh: Video mungkin terkunci regional, privat, atau melebihi batas durasi/ukuran.',
-        );
+        // Try with .webm extension as fallback
+        const webmPath = basePath + '.webm';
+        try {
+            await fsp.stat(webmPath);
+            // Convert webm to mp4
+            const mp4Out = tempPath('mp4');
+            await new Promise((resolve, reject) => {
+                ffmpeg(webmPath)
+                    .videoCodec('libx264')
+                    .audioCodec('aac')
+                    .outputOptions(['-pix_fmt', 'yuv420p'])
+                    .format('mp4')
+                    .on('error', reject)
+                    .on('end', resolve)
+                    .save(mp4Out);
+            });
+            await fsp.unlink(webmPath); // Cleanup webm
+            return mp4Out;
+        } catch {
+            throw new Error(
+                '❌ Gagal unduh: Video mungkin terkunci regional, privat, atau melebihi batas durasi/ukuran.',
+            );
+        }
     }
-    return out;
 }
 
 export async function getBasicInfo(url) {
