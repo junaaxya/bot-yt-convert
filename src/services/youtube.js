@@ -54,8 +54,10 @@ async function ytDlpAudioMP3(url) {
     const out = tempPath('m4a');
     await ytDlp.execPromise([
         cleanUrl(url),
-        '--ffmpeg-location', '/usr/bin/ffmpeg',
-        '--js-runtime', 'node',
+        '--ffmpeg-location',
+        '/usr/bin/ffmpeg',
+        '--js-runtime',
+        'node',
         '-x',
         '--audio-format',
         'm4a',
@@ -85,8 +87,10 @@ async function ytDlpVideoMP4(url) {
     const out = tempPath('mp4');
     await ytDlp.execPromise([
         cleanUrl(url),
-        '--ffmpeg-location', '/usr/bin/ffmpeg',
-        '--js-runtime', 'node',
+        '--ffmpeg-location',
+        '/usr/bin/ffmpeg',
+        '--js-runtime',
+        'node',
         '-f',
         `bestvideo[height<=?720][ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]/best[height<=?720][ext=mp4][vcodec^=avc]`, // <-- DIGANTI
         '--merge-output-format',
@@ -137,19 +141,19 @@ export async function downloadYouTubeMP3(url) {
             filter: 'audioonly',
             quality: 'highestaudio',
         });
-        const out = tempPath('mp3');
+        const out = tempPath('m4a');
         await new Promise((resolve, reject) => {
             ffmpeg(audio)
-                .audioCodec('libmp3lame')
-                .audioBitrate('192k')
-                .format('mp3')
+                .audioCodec('aac')
+                .audioBitrate('256k')
+                .format('ipod') // M4A container for iPhone compatibility
                 .on('error', reject)
                 .on('end', resolve)
                 .save(out);
         });
         return {
             path: out,
-            fileName: safeName(info.videoDetails.title, 'mp3'), // Sekarang sudah didefinisikan
+            fileName: safeName(info.videoDetails.title, 'm4a'),
         };
     } catch (e) {
         // broader match for any bot/captcha/signature issues

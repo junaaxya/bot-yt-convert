@@ -38,7 +38,7 @@ export async function applyPitchShift(inputPath, semitones) {
     // If we pitch up (ratio > 1), audio gets faster, so we must slow down (tempo < 1)
     const tempo = 1 / ratio;
 
-    const out = tempPath('mp3');
+    const out = tempPath('m4a');
 
     await new Promise((resolve, reject) => {
         ffmpeg(inputPath)
@@ -49,7 +49,9 @@ export async function applyPitchShift(inputPath, semitones) {
                 // Resample back to original rate to standardise output
                 `aresample=${inputRate}`,
             ])
-            .format('mp3')
+            .audioCodec('aac')
+            .audioBitrate('256k')
+            .format('ipod') // M4A container for iPhone compatibility
             .on('error', reject)
             .on('end', resolve)
             .save(out);
@@ -63,7 +65,7 @@ export async function applyPitchShift(inputPath, semitones) {
 
     return {
         path: out,
-        fileName: `pitch_${semitones > 0 ? '+' : ''}${semitones}.mp3`,
+        fileName: `pitch_${semitones > 0 ? '+' : ''}${semitones}.m4a`,
     };
 }
 
