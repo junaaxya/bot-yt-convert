@@ -50,6 +50,53 @@ function safeName(title, ext) {
 }
 
 /**
+ * Check if video file needs conversion for iPhone compatibility
+ * iPhone requires H.264 (avc) video codec and AAC audio codec
+ * @param {string} filePath - Path to video file
+ * @returns {Promise<boolean>} - True if conversion needed
+ */
+async function checkNeedsConversion(filePath) {
+    try {
+        const metadata = await new Promise((resolve, reject) => {
+            ffmpeg.ffprobe(filePath, (err, data) => {
+                if (err) reject(err);
+                else resolve(data);
+            });
+        });
+
+        const videoStream = metadata.streams.find(
+            (s) => s.codec_type === 'video',
+        );
+        const audioStream = metadata.streams.find(
+            (s) => s.codec_type === 'audio',
+        );
+
+        // Check if video is H.264 (avc1, h264, avc)
+        const videoCodec = videoStream?.codec_name?.toLowerCase() || '';
+        const isH264 =
+            videoCodec.includes('h264') || videoCodec.includes('avc');
+
+        // Check if audio is AAC
+        const audioCodec = audioStream?.codec_name?.toLowerCase() || '';
+        const isAAC = audioCodec.includes('aac');
+
+        // Needs conversion if not H.264 or not AAC
+        const needsConversion = !isH264 || !isAAC;
+        console.log(
+            `[yt-dlp] Codec check: video=${videoCodec} audio=${audioCodec} needsConversion=${needsConversion}`,
+        );
+
+        return needsConversion;
+    } catch (e) {
+        console.log(
+            '[yt-dlp] Could not probe file, assuming conversion needed:',
+            e.message,
+        );
+        return true; // If we can't probe, assume conversion is needed
+    }
+}
+
+/**
  * Parse YouTube error and return user-friendly Indonesian message
  * @param {Error} error - The error object
  * @returns {string} - User-friendly error message in Indonesian
@@ -199,14 +246,14 @@ async function ytDlpVideoMP4(url) {
             '--ffmpeg-location',
             '/usr/bin/ffmpeg',
             '--js-runtime',
-            'node', // Tell yt-dlp to use Node.js for JS
-            // Use Android client to bypass SABR streaming and get direct URLs
+            'node',
             '--extractor-args',
             'youtube:player_client=android',
+            // Flexible format: try best quality up to 720p, fallback to whatever is available
             '-f',
-            'bv*[height<=?720]+ba/b[height<=?720]/bv*+ba/b', // Best video+audio, merge
+            'bestvideo[height<=?720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=?720]+bestaudio/best[height<=?720]/best',
             '--merge-output-format',
-            'mp4', // Merge to MP4
+            'mp4',
             '--no-playlist',
             '--geo-bypass',
             '--no-check-certificate',
@@ -216,7 +263,6 @@ async function ytDlpVideoMP4(url) {
         console.log('[yt-dlp] Download completed, result:', result);
     } catch (e) {
         console.error('[yt-dlp video error] Full error:', e);
-        console.error('[yt-dlp video error] stderr:', e.stderr);
         const userMsg = parseYouTubeError(e);
         if (userMsg) throw new Error(userMsg);
         throw new Error(
@@ -232,18 +278,26 @@ async function ytDlpVideoMP4(url) {
             await fsp.stat(checkPath);
             console.log('[yt-dlp] Found file at:', checkPath);
 
-            // If not mp4, convert to mp4
-            if (ext && ext !== '.mp4') {
+            // Check if file needs conversion for iPhone compatibility
+            const needsConversion = await checkNeedsConversion(checkPath);
+
+            if (needsConversion || (ext && ext !== '.mp4')) {
+                console.log('[yt-dlp] Converting to iPhone-compatible MP4...');
                 const mp4Out = tempPath('mp4');
                 await new Promise((resolve, reject) => {
                     ffmpeg(checkPath)
                         .videoCodec('libx264')
                         .audioCodec('aac')
+                        .audioBitrate('192k')
                         .outputOptions([
                             '-pix_fmt',
                             'yuv420p',
                             '-movflags',
                             '+faststart',
+                            '-preset',
+                            'fast',
+                            '-crf',
+                            '23',
                         ])
                         .format('mp4')
                         .on('error', reject)
@@ -251,6 +305,7 @@ async function ytDlpVideoMP4(url) {
                         .save(mp4Out);
                 });
                 await fsp.unlink(checkPath);
+                console.log('[yt-dlp] Conversion complete:', mp4Out);
                 return mp4Out;
             }
             return checkPath;
