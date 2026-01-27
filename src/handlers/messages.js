@@ -336,14 +336,24 @@ export function createMessageHandler(sock, logger = console) {
                             await applyPitchShift(out, semitones);
                         await ensureWithinLimit(resultPath);
 
-                        // 5. Send back
-                        await sendAudio(
-                            jid,
-                            resultPath,
-                            fileName,
-                            'audio/mp4',
-                            { quoted: safeQuote },
-                        );
+                        // 5. Send back - detect if output is video or audio
+                        const isVideoOutput = fileName.endsWith('.mp4');
+                        if (isVideoOutput) {
+                            await sendVideo(
+                                jid,
+                                resultPath,
+                                `🎵 Pitch shifted ${semitones > 0 ? '+' : ''}${semitones} semitones`,
+                                { quoted: safeQuote },
+                            );
+                        } else {
+                            await sendAudio(
+                                jid,
+                                resultPath,
+                                fileName,
+                                'audio/mp4',
+                                { quoted: safeQuote },
+                            );
+                        }
 
                         await cleanup(resultPath);
                     } catch (e) {

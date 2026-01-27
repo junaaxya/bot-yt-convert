@@ -9,13 +9,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * Apply pitch shift to an audio file
- * @param {string} inputPath - Path to input audio file
+ * Apply pitch shift to an audio or video file
+ * If input is video (MP4), output will be MP4 with pitch-shifted audio
+ * If input is audio, output will be M4A
+ * @param {string} inputPath - Path to input audio/video file
  * @param {number} semitones - Number of semitones to shift (e.g., -1, 0.5, 2)
  * @returns {Promise<{path: string, fileName: string}>}
  */
 export async function applyPitchShift(inputPath, semitones) {
-    // 1. Get input sample rate to prevent duration drift (48k vs 44.1k issue)
+    // 1. Probe input to get metadata and detect if it's video or audio
     const metadata = await new Promise((resolve, reject) => {
         ffmpeg.ffprobe(inputPath, (err, metadata) => {
             if (err) reject(err);
@@ -23,10 +25,12 @@ export async function applyPitchShift(inputPath, semitones) {
         });
     });
 
+    const audioStream = metadata.streams.find((s) => s.codec_type === 'audio');
+    const videoStream = metadata.streams.find((s) => s.codec_type === 'video');
+    const isVideo = !!videoStream && videoStream.codec_name !== 'mjpeg'; // Exclude album art
+
     // Default to 44100 if probing fails or missing
-    const inputRate =
-        metadata.streams.find((s) => s.codec_type === 'audio')?.sample_rate ||
-        44100;
+    const inputRate = audioStream?.sample_rate || 44100;
 
     // 2. Calculate frequency ratio: f = 2^(n/12)
     const ratio = Math.pow(2, semitones / 12);
@@ -35,38 +39,76 @@ export async function applyPitchShift(inputPath, semitones) {
     const newRate = Math.round(inputRate * ratio);
 
     // 4. Tempo compensation (to keep original duration)
-    // If we pitch up (ratio > 1), audio gets faster, so we must slow down (tempo < 1)
     const tempo = 1 / ratio;
 
-    const out = tempPath('m4a');
+    const audioFilters = [
+        `asetrate=${newRate}`,
+        `atempo=${tempo.toFixed(4)}`,
+        `aresample=${inputRate}`,
+    ];
 
-    await new Promise((resolve, reject) => {
-        ffmpeg(inputPath)
-            // Trick: set audio sample rate (asetrate) to change pitch + speed
-            .audioFilters([
-                `asetrate=${newRate}`,
-                `atempo=${tempo.toFixed(4)}`,
-                // Resample back to original rate to standardise output
-                `aresample=${inputRate}`,
-            ])
-            .audioCodec('aac')
-            .audioBitrate('256k')
-            .format('ipod') // M4A container for iPhone compatibility
-            .on('error', reject)
-            .on('end', resolve)
-            .save(out);
-    });
+    if (isVideo) {
+        // VIDEO INPUT: Output MP4 with pitch-shifted audio + original video
+        const out = tempPath('mp4');
 
-    try {
-        await fsp.stat(out);
-    } catch (e) {
-        throw new Error(`FFmpeg failed to create output file for pitch shift.`);
+        await new Promise((resolve, reject) => {
+            ffmpeg(inputPath)
+                .videoCodec('copy') // Keep original video stream
+                .audioFilters(audioFilters)
+                .audioCodec('aac')
+                .audioBitrate('320k') // High quality audio
+                .outputOptions([
+                    '-pix_fmt',
+                    'yuv420p', // iPhone compatibility
+                    '-movflags',
+                    '+faststart', // Fast streaming
+                ])
+                .format('mp4')
+                .on('error', reject)
+                .on('end', resolve)
+                .save(out);
+        });
+
+        try {
+            await fsp.stat(out);
+        } catch (e) {
+            throw new Error(
+                `FFmpeg failed to create output file for pitch shift.`,
+            );
+        }
+
+        return {
+            path: out,
+            fileName: `pitch_${semitones > 0 ? '+' : ''}${semitones}.mp4`,
+        };
+    } else {
+        // AUDIO INPUT: Output M4A with pitch-shifted audio
+        const out = tempPath('m4a');
+
+        await new Promise((resolve, reject) => {
+            ffmpeg(inputPath)
+                .audioFilters(audioFilters)
+                .audioCodec('aac')
+                .audioBitrate('320k') // High quality audio
+                .format('ipod') // M4A container for iPhone compatibility
+                .on('error', reject)
+                .on('end', resolve)
+                .save(out);
+        });
+
+        try {
+            await fsp.stat(out);
+        } catch (e) {
+            throw new Error(
+                `FFmpeg failed to create output file for pitch shift.`,
+            );
+        }
+
+        return {
+            path: out,
+            fileName: `pitch_${semitones > 0 ? '+' : ''}${semitones}.m4a`,
+        };
     }
-
-    return {
-        path: out,
-        fileName: `pitch_${semitones > 0 ? '+' : ''}${semitones}.m4a`,
-    };
 }
 
 /**
