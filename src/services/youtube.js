@@ -49,65 +49,182 @@ function safeName(title, ext) {
     return sane.slice(0, 50) + '.' + ext;
 }
 
+/**
+ * Parse YouTube error and return user-friendly Indonesian message
+ * @param {Error} error - The error object
+ * @returns {string} - User-friendly error message in Indonesian
+ */
+function parseYouTubeError(error) {
+    const msg = String(error?.message || error || '').toLowerCase();
+
+    // Regional lock
+    if (
+        msg.includes('not available') ||
+        msg.includes('country') ||
+        msg.includes('geo') ||
+        msg.includes('region')
+    ) {
+        return '❌ Video tidak tersedia di Indonesia (regional lock). Coba video lain.';
+    }
+
+    // Private video
+    if (
+        msg.includes('private') ||
+        msg.includes('sign in') ||
+        msg.includes('login')
+    ) {
+        return '❌ Video ini privat atau butuh login. Pastikan video bersifat publik.';
+    }
+
+    // Age restricted
+    if (
+        msg.includes('age') ||
+        msg.includes('confirm your age') ||
+        msg.includes('mature')
+    ) {
+        return '❌ Video ini dibatasi usia (18+). Tidak bisa diunduh.';
+    }
+
+    // Removed/Deleted
+    if (
+        msg.includes('removed') ||
+        msg.includes('deleted') ||
+        msg.includes('no longer available') ||
+        msg.includes('unavailable')
+    ) {
+        return '❌ Video sudah dihapus atau tidak tersedia di YouTube.';
+    }
+
+    // Copyright
+    if (
+        msg.includes('copyright') ||
+        msg.includes('blocked') ||
+        msg.includes('claim')
+    ) {
+        return '❌ Video diblokir karena masalah hak cipta.';
+    }
+
+    // Duration filter
+    if (msg.includes('duration') || msg.includes('too long')) {
+        return `❌ Video terlalu panjang (maks ${Math.round(CONFIG.MAX_DURATION_SEC / 60)} menit).`;
+    }
+
+    // Size filter
+    if (
+        msg.includes('filesize') ||
+        msg.includes('too large') ||
+        msg.includes('size')
+    ) {
+        return `❌ File terlalu besar (maks ${CONFIG.MAX_FILE_MB} MB).`;
+    }
+
+    // Bot/Captcha (will trigger fallback)
+    if (
+        msg.includes('bot') ||
+        msg.includes('captcha') ||
+        msg.includes('signature') ||
+        msg.includes('extract')
+    ) {
+        return null; // Return null to signal "try fallback"
+    }
+
+    // Live stream
+    if (msg.includes('live') || msg.includes('premiere')) {
+        return '❌ Live stream atau premiere tidak bisa diunduh. Tunggu sampai selesai.';
+    }
+
+    // Invalid URL
+    if (msg.includes('invalid') || msg.includes('url')) {
+        return '❌ URL YouTube tidak valid. Pastikan link benar.';
+    }
+
+    // Generic fallback
+    return null; // Return null to signal "try fallback first"
+}
+
 // <-- TAMBAHAN: Fungsi fallback yt-dlp untuk MP3
 async function ytDlpAudioMP3(url) {
     const out = tempPath('m4a');
-    await ytDlp.execPromise([
-        cleanUrl(url),
-        '--ffmpeg-location',
-        '/usr/bin/ffmpeg',
-        '--js-runtime',
-        'node',
-        '-x',
-        '--audio-format',
-        'm4a',
-        '-f',
-        'bestaudio',
-        '--max-filesize',
-        `${CONFIG.MAX_FILE_MB}m`,
-        '--match-filter',
-        `duration <= ?${CONFIG.MAX_DURATION_SEC}`,
-        '-o',
-        out,
-    ]);
+    try {
+        await ytDlp.execPromise([
+            cleanUrl(url),
+            '--ffmpeg-location',
+            '/usr/bin/ffmpeg',
+            '--js-runtime',
+            'node',
+            '-x',
+            '--audio-format',
+            'm4a',
+            '-f',
+            'bestaudio',
+            '--max-filesize',
+            `${CONFIG.MAX_FILE_MB}m`,
+            '--match-filter',
+            `duration <= ?${CONFIG.MAX_DURATION_SEC}`,
+            '--geo-bypass', // Bypass geo restrictions
+            '--no-check-certificate', // Skip SSL issues
+            '--no-playlist', // Single video only
+            '-o',
+            out,
+        ]);
+    } catch (e) {
+        // Parse the error for user-friendly message
+        const userMsg = parseYouTubeError(e);
+        if (userMsg) throw new Error(userMsg);
+        throw new Error(
+            '❌ Gagal mengunduh audio. Video mungkin terkunci atau tidak tersedia.',
+        );
+    }
+
     try {
         await fsp.stat(out);
     } catch (e) {
-        // Jika file tidak ada, lempar error yang lebih jelas
         throw new Error(
-            'Gagal unduh: yt-dlp tidak membuat file. Video mungkin terkunci regional, privat, atau terfilter (durasi/ukuran).',
+            '❌ Gagal unduh: Video mungkin terkunci regional, privat, atau melebihi batas durasi/ukuran.',
         );
     }
 
     return out;
 }
 
-// <-- TAMBAHAN: Fungsi fallback yt-dlp untuk MP4 (INI YANG MENYEBABKAN ERROR)
+// <-- TAMBAHAN: Fungsi fallback yt-dlp untuk MP4
 async function ytDlpVideoMP4(url) {
     const out = tempPath('mp4');
-    await ytDlp.execPromise([
-        cleanUrl(url),
-        '--ffmpeg-location',
-        '/usr/bin/ffmpeg',
-        '--js-runtime',
-        'node',
-        '-f',
-        `bestvideo[height<=?720][ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]/best[height<=?720][ext=mp4][vcodec^=avc]`, // <-- DIGANTI
-        '--merge-output-format',
-        'mp4',
-        '--max-filesize',
-        `${CONFIG.MAX_FILE_MB}m`,
-        '--match-filter',
-        `duration <= ?${CONFIG.MAX_DURATION_SEC}`,
-        '-o',
-        out,
-    ]);
+    try {
+        await ytDlp.execPromise([
+            cleanUrl(url),
+            '--ffmpeg-location',
+            '/usr/bin/ffmpeg',
+            '--js-runtime',
+            'node',
+            '-f',
+            `bestvideo[height<=?720][ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]/best[height<=?720][ext=mp4][vcodec^=avc]`,
+            '--merge-output-format',
+            'mp4',
+            '--max-filesize',
+            `${CONFIG.MAX_FILE_MB}m`,
+            '--match-filter',
+            `duration <= ?${CONFIG.MAX_DURATION_SEC}`,
+            '--geo-bypass', // Bypass geo restrictions
+            '--no-check-certificate', // Skip SSL issues
+            '--no-playlist', // Single video only
+            '-o',
+            out,
+        ]);
+    } catch (e) {
+        // Parse the error for user-friendly message
+        const userMsg = parseYouTubeError(e);
+        if (userMsg) throw new Error(userMsg);
+        throw new Error(
+            '❌ Gagal mengunduh video. Video mungkin terkunci atau tidak tersedia.',
+        );
+    }
+
     try {
         await fsp.stat(out);
     } catch (e) {
-        // Jika file tidak ada, lempar error yang lebih jelas
         throw new Error(
-            'Gagal unduh: yt-dlp tidak membuat file. Video mungkin terkunci regional, privat, atau terfilter (durasi/ukuran).',
+            '❌ Gagal unduh: Video mungkin terkunci regional, privat, atau melebihi batas durasi/ukuran.',
         );
     }
     return out;
@@ -155,17 +272,30 @@ export async function downloadYouTubeMP3(url) {
             path: out,
             fileName: safeName(info.videoDetails.title, 'm4a'),
         };
-    } catch (e) {
-        // broader match for any bot/captcha/signature issues
-        if (
-            /(confirm (you('|’|’)re|you are) not a bot|extract functions|captcha|signature)/i.test(
-                String(e?.message),
-            )
-        ) {
-            const out = await ytDlpAudioMP3(url); // Sekarang sudah didefinisikan
-            return { path: out, fileName: safeName('audio', 'mp3') }; // Sekarang sudah didefinisikan
+    } catch (ytdlError) {
+        // Check if this is a definitive error that won't be fixed by fallback
+        const userMsg = parseYouTubeError(ytdlError);
+        if (userMsg) {
+            // Definitive error - throw immediately without fallback
+            throw new Error(userMsg);
         }
-        throw e;
+
+        // Try yt-dlp fallback for all other errors
+        console.log(
+            '[YouTube] ytdl-core failed, trying yt-dlp fallback:',
+            ytdlError.message,
+        );
+        try {
+            const out = await ytDlpAudioMP3(url);
+            return { path: out, fileName: safeName('audio', 'm4a') };
+        } catch (ytdlpError) {
+            // Both failed - parse yt-dlp error for user message
+            const ytdlpUserMsg = parseYouTubeError(ytdlpError);
+            if (ytdlpUserMsg) throw new Error(ytdlpUserMsg);
+            throw new Error(
+                '❌ Gagal mengunduh audio. Coba video lain atau cek URL.',
+            );
+        }
     }
 }
 
@@ -224,15 +354,29 @@ export async function downloadYouTubeMP4(url) {
                 .save(out);
         });
         return { path: out, fileName: safeName(title, 'mp4') }; // Sekarang sudah didefinisikan
-    } catch (e) {
-        if (
-            /(confirm (you('|’|’)re|you are) not a bot|extract functions|captcha|signature)/i.test(
-                String(e?.message),
-            )
-        ) {
-            const out = await ytDlpVideoMP4(url); // Sekarang sudah didefinisikan
-            return { path: out, fileName: safeName('video', 'mp4') }; // Sekarang sudah didefinisikan
+    } catch (ytdlError) {
+        // Check if this is a definitive error that won't be fixed by fallback
+        const userMsg = parseYouTubeError(ytdlError);
+        if (userMsg) {
+            // Definitive error - throw immediately without fallback
+            throw new Error(userMsg);
         }
-        throw e;
+
+        // Try yt-dlp fallback for all other errors
+        console.log(
+            '[YouTube] ytdl-core failed, trying yt-dlp fallback:',
+            ytdlError.message,
+        );
+        try {
+            const out = await ytDlpVideoMP4(url);
+            return { path: out, fileName: safeName('video', 'mp4') };
+        } catch (ytdlpError) {
+            // Both failed - parse yt-dlp error for user message
+            const ytdlpUserMsg = parseYouTubeError(ytdlpError);
+            if (ytdlpUserMsg) throw new Error(ytdlpUserMsg);
+            throw new Error(
+                '❌ Gagal mengunduh video. Coba video lain atau cek URL.',
+            );
+        }
     }
 }
