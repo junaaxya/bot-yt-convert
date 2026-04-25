@@ -5,6 +5,19 @@ import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+const DEMUCS_SERVICE_URL =
+    process.env.DEMUCS_SERVICE_URL || 'http://127.0.0.1:8099';
+const DEMUCS_SHARED_MOUNT =
+    process.env.DEMUCS_SHARED_MOUNT || '/shared-temp';
+
+function toDemucsSharedPath(localPath) {
+    if (!localPath) return localPath;
+    if (localPath.startsWith('/tmp/')) {
+        return localPath.replace('/tmp/', `${DEMUCS_SHARED_MOUNT}/`);
+    }
+    return localPath;
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -118,49 +131,25 @@ export async function applyPitchShift(inputPath, semitones) {
  * @returns {Promise<{path: string, fileName: string}>}
  */
 export async function applyKaraoke(inputPath, keepVocals = false) {
-    const outputDir = path.dirname(inputPath);
     const stemType = keepVocals ? 'vocals' : 'no_vocals';
-    const scriptPath = path.join(__dirname, '../../scripts/demucs_separate.py');
 
-    // Call Python Demucs script
-    await new Promise((resolve, reject) => {
-        const proc = spawn('python3', [
-            scriptPath,
-            inputPath,
-            outputDir,
-            stemType,
-        ]);
-
-        let stderr = '';
-        proc.stderr.on('data', (data) => {
-            stderr += data.toString();
-            // Log real-time progress for debugging
-            if (data.toString().includes('Separating')) {
-                console.log('Demucs Progress:', data.toString().trim());
-            }
-        });
-
-        proc.on('close', (code) => {
-            if (code === 0) {
-                resolve();
-            } else {
-                // Enhanced error message
-                console.error('Demucs Failed Details:', stderr);
-                reject(
-                    new Error(
-                        `Demucs process failed with code ${code}: ${stderr}`,
-                    ),
-                );
-            }
-        });
-
-        proc.on('error', (err) => {
-            reject(new Error(`Failed to spawn Demucs process: ${err.message}`));
-        });
+    const response = await fetch(`${DEMUCS_SERVICE_URL}/separate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            input_path: toDemucsSharedPath(inputPath),
+            stem_type: stemType,
+        }),
     });
 
-    // Find the result WAV file
-    const wavPath = path.join(outputDir, `${stemType}.wav`);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) {
+        throw new Error(
+            payload.error || 'Demucs service gagal memproses audio.',
+        );
+    }
+
+    const wavPath = payload.result_path;
 
     try {
         await fsp.stat(wavPath);
@@ -212,7 +201,6 @@ export async function applyKaraoke(inputPath, keepVocals = false) {
 export async function applyKaraokeVideo(inputPath, keepVocals = false) {
     const outputDir = path.dirname(inputPath);
     const stemType = keepVocals ? 'vocals' : 'no_vocals';
-    const scriptPath = path.join(__dirname, '../../scripts/demucs_separate.py');
 
     // 1. Extract audio from video
     const audioPath = tempPath('wav');
@@ -227,29 +215,23 @@ export async function applyKaraokeVideo(inputPath, keepVocals = false) {
             .save(audioPath);
     });
 
-    // 2. Process audio with Demucs
-    await new Promise((resolve, reject) => {
-        const proc = spawn('python3', [
-            scriptPath,
-            audioPath,
-            outputDir,
-            stemType,
-        ]);
-        let stderr = '';
-        proc.stderr.on('data', (data) => {
-            stderr += data.toString();
-        });
-        proc.on('close', (code) => {
-            if (code === 0) resolve();
-            else reject(new Error(`Demucs failed: ${stderr}`));
-        });
-        proc.on('error', (err) =>
-            reject(new Error(`Failed to start Demucs: ${err.message}`)),
-        );
+    // 2. Process audio with Demucs service
+    const response = await fetch(`${DEMUCS_SERVICE_URL}/separate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            input_path: toDemucsSharedPath(audioPath),
+            stem_type: stemType,
+        }),
     });
 
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Demucs service gagal memproses video.');
+    }
+
     // 3. Get processed audio
-    const processedAudioPath = path.join(outputDir, `${stemType}.wav`);
+    const processedAudioPath = payload.result_path;
     try {
         await fsp.stat(processedAudioPath);
     } catch (e) {

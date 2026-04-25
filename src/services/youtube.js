@@ -9,8 +9,8 @@ import ffmpegBin from 'ffmpeg-static';
 // Ambil constructor yg benar (mengatasi masalah CJS/ESM interop)
 const YtDlpWrapCtor = YtDlpWrap.default || YtDlpWrap;
 
-// Coba pakai binary sistem (yang tadi kamu install di VPS)
-const YTDLP_PATH = process.env.YT_DLP_PATH || '/usr/local/bin/yt-dlp'; // lokasi yg kamu install manual
+// Pakai env bila ada; fallback ke lokasi binary dalam image bot baru
+const YTDLP_PATH = process.env.YT_DLP_PATH || '/opt/venv/bin/yt-dlp';
 
 const ytDlp = new YtDlpWrapCtor(YTDLP_PATH);
 const FORCE_YTDLP = String(process.env.USE_YTDLP || '').trim() === '1';
