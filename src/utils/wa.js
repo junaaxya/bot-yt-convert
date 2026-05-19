@@ -1,12 +1,33 @@
-export function getTextFromMessage(msg) {
-const m = msg.message || {};
-if (m.conversation) return m.conversation.trim();
-if (m.extendedTextMessage?.text) return m.extendedTextMessage.text.trim();
-if (m.imageMessage?.caption) return m.imageMessage.caption.trim();
-if (m.videoMessage?.caption) return m.videoMessage.caption.trim();
-return '';
+function unwrapMessageContent(message = {}) {
+let m = message;
+if (m.ephemeralMessage?.message) m = m.ephemeralMessage.message;
+if (m.viewOnceMessageV2?.message) m = m.viewOnceMessageV2.message;
+if (m.viewOnceMessage?.message) m = m.viewOnceMessage.message;
+if (m.documentWithCaptionMessage?.message)
+    m = m.documentWithCaptionMessage.message;
+return m || {};
 }
 
+export function getTextFromMessage(msg) {
+const m = unwrapMessageContent(msg.message || {});
+
+if (typeof m.conversation === 'string') return m.conversation.trim();
+if (typeof m.extendedTextMessage?.text === 'string')
+    return m.extendedTextMessage.text.trim();
+if (typeof m.imageMessage?.caption === 'string')
+    return m.imageMessage.caption.trim();
+if (typeof m.videoMessage?.caption === 'string')
+    return m.videoMessage.caption.trim();
+if (typeof m.documentMessage?.caption === 'string')
+    return m.documentMessage.caption.trim();
+if (typeof m.buttonsResponseMessage?.selectedButtonId === 'string')
+    return m.buttonsResponseMessage.selectedButtonId.trim();
+if (typeof m.listResponseMessage?.singleSelectReply?.selectedRowId === 'string')
+    return m.listResponseMessage.singleSelectReply.selectedRowId.trim();
+if (typeof m.templateButtonReplyMessage?.selectedId === 'string')
+    return m.templateButtonReplyMessage.selectedId.trim();
+return '';
+}
 
 export function parseCommand(text) {
 // Commands: .help, .ytmp3 <url>, .ytmp4 <url>, .to_mp3, .to_mp4
